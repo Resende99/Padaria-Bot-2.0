@@ -1,6 +1,6 @@
 [app]
   # Nome do app no fly.io; será substituído/confirmado durante 'fly launch'
-  app = "Padaria-Bot2.0"
+  app = "Padaria-Bot-2.0"
   kill_signal = "SIGINT"
   kill_timeout = 5
   processes = []
