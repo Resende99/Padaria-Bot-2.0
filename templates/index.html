@@ -2,24 +2,35 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <title>Padaria-Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PadariaBot</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<div id="app">
+
   <header>
-    <h1>PadariaBot</h1>
-    <p>Seu assistente de panificação</p>
+    <h1>Padaria-Bot</h1>
+    <div class="status">Sistema ativo • Receitas e fermentação</div>
   </header>
 
-  <div id="chat-container">
-    <div id="chat-box"></div>
-    <div id="input-container">
-      <input id="user-input" type="text" placeholder="Digite sua mensagem..." autocomplete="off">
-      <button id="send-btn">Enviar</button>
-    </div>
+  <div id="chat-box"></div>
+
+  <div id="quick-actions">
+    <button class="quick-btn">Receitas para dias quentes</button>
+    <button class="quick-btn">Receitas para dias frios</button>
+    <button class="quick-btn">Calcular fermento</button>
   </div>
 
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <div id="input-container">
+    <input type="text" id="user-input" placeholder="Digite sua pergunta">
+    <button id="send-btn">Enviar</button>
+  </div>
+
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>

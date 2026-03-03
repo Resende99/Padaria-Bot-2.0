@@ -1,0 +1,13 @@
+__pycache__
+.venv
+venv
+*.pyc
+.pytest_cache
+.env
+receitas_cache.json
+pdfs_upload/
+dist
+build
+*.egg-info
+.venv/
+/.vscode/

@@ -1,64 +1,121 @@
-# PadariaBot
 
-Este projeto é um chatbot criado para ajudar em uma padaria, respondendo perguntas sobre receitas, massas e fermentação. Ele utiliza um PDF com receitas reais e uma API de IA para complementar respostas quando necessário.
 
----
+PadariaBot 2.0
 
-## O que o projeto faz
+Assistente inteligente especializado em panificação e confeitaria, utilizando base de conhecimento em PDF e modelo de linguagem via API.
 
-* Recebe perguntas do usuário.
-* Usa primeiro o conteúdo do PDF como fonte principal.
-* Quando necessário, consulta a IA para completar a resposta.
-* Sempre segue regras para falar apenas de panificação e confeitaria.
+Sobre o Projeto
 
----
+O PadariaBot é uma aplicação web desenvolvida para auxiliar padarias e profissionais da área de panificação, oferecendo:
 
-## Como funciona
+Respostas técnicas sobre receitas
 
-### **Front-end**
+Ajuste proporcional de ingredientes
 
-* É a parte visual que o usuário interage.
-* Envia as mensagens para o servidor.
-* Mostra as respostas que chegam em formato JSON.
+Cálculo automático de fermento
 
-### **Back-end (Flask)**
+Base de conhecimento carregada a partir de PDFs
 
-Responsável por:
+Integração com modelo de linguagem (Groq – Llama 3)
 
-* Ler e carregar o PDF ao iniciar o sistema.
-* Extrair o texto das receitas.
-* Montar o contexto e enviar para a IA.
-* Processar a resposta e devolver ao front-end.
+A aplicação prioriza respostas locais (regras internas e PDFs) antes de recorrer à IA, reduzindo custo e latência.
 
-### **IA**
+Arquitetura
 
-* Recebe a pergunta + conteúdo do PDF.
-* Gera uma resposta focada em panificação.
-* Segue regras rígidas para não sair do tema.
+Fluxo da aplicação:
 
----
+Usuário
+→ API Flask (/api/v1/chat)
+→ Regras internas (ex: cálculo de fermento)
+→ Cache local
+→ Conteúdo dos PDFs carregados
+→ Histórico da sessão
+→ IA (Groq – Llama 3) como fallback
+→ Resposta final
 
-## Principais recursos
+A IA é utilizada apenas quando a resposta não pode ser resolvida localmente.
 
-* Leitura automática do PDF.
-* Chat funcional acessado pelo navegador.
-* API tratada com tentativas e prevenção de erro 429.
-* Cálculo automático de fermento usando temperatura.
-* Respostas totalmente focadas no tema padaria.
+Tecnologias Utilizadas
 
----
+Python
 
-## Estrutura do projeto
+Flask
 
-* **Front-end**: interface simples do chat.
-* **Back-end**: servidor Flask com rotas para chat e upload de PDF.
-* **Integração com IA**: usa a API do Gemini.
-* **PDF**: base de conhecimento com receitas.
+Flask-RESTX
 
----
+PyPDF2
 
-## Objetivo
+Requests
 
-Criar um assistente prático e direto para padarias, usando o PDF como fonte principal e mantendo sempre o foco em panificação e confeitaria.
+Gunicorn
 
----
+Groq API (Llama 3)
+
+Funcionalidades
+
+Upload dinâmico de PDFs
+
+Extração automática de texto
+
+Contexto baseado em regras específicas de panificação
+
+Histórico de conversa por sessão
+
+Sistema de cache para otimização de desempenho
+
+API estruturada em namespaces
+
+Endpoints
+POST /api/v1/chat
+
+Entrada:
+
+{
+  "mensagem": "Como fazer pão francês?"
+}
+
+Saída:
+
+{
+  "resposta": "..."
+}
+POST /upload_pdf
+
+Permite envio de novos arquivos PDF para a base de conhecimento.
+
+Variáveis de Ambiente
+API_KEY=sua_chave_groq
+FLASK_SECRET_KEY=chave_segura
+PORT=5000
+Execução Local
+pip install -r requirements.txt
+python api.py
+Deploy
+
+Aplicação preparada para deploy em ambientes como Render utilizando Gunicorn.
+
+Procfile:
+
+web: gunicorn api:app
+Estrutura do Projeto
+app/
+routes/
+services/
+templates/
+static/
+api.py
+requirements.txt
+Procfile
+Objetivo
+
+Demonstrar aplicação prática de:
+
+Arquitetura backend estruturada
+
+Integração com modelo de linguagem
+
+Sistema RAG simplificado
+
+Organização modular de projeto Flask
+
+Boas práticas para deploy em produção
