@@ -4,33 +4,34 @@
   <meta charset="UTF-8">
   <title>Padaria-Bot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
+  <div id="app">
 
-<div id="app">
+    <header>
+      <h1>Padaria-Bot</h1>
+      <div class="status">Sistema ativo • Receitas e fermentação</div>
+    </header>
 
-  <header>
-    <h1>Padaria-Bot</h1>
-    <div class="status">Sistema ativo • Receitas e fermentação</div>
-  </header>
+    <div id="chat-box"></div>
 
-  <div id="chat-box"></div>
+    <div id="quick-actions">
+      <button class="quick-btn">Receitas para dias quentes</button>
+      <button class="quick-btn">Receitas para dias frios</button>
+      <button class="quick-btn">Calcular fermento</button>
+    </div>
 
-  <div id="quick-actions">
-    <button class="quick-btn">Receitas para dias quentes</button>
-    <button class="quick-btn">Receitas para dias frios</button>
-    <button class="quick-btn">Calcular fermento</button>
+    <div id="input-container">
+      <input type="text" id="user-input" placeholder="Digite sua pergunta">
+      <button id="send-btn">Enviar</button>
+    </div>
+
   </div>
 
-  <div id="input-container">
-    <input type="text" id="user-input" placeholder="Digite sua pergunta">
-    <button id="send-btn">Enviar</button>
-  </div>
-
-</div>
-
-<script src="script.js"></script>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
