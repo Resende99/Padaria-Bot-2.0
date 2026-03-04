@@ -1,17 +1,17 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Padaria-Bot</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 
 <body>
   <div id="app">
-
     <header>
       <h1>Padaria-Bot</h1>
       <div class="status">Sistema ativo • Receitas e fermentação</div>
@@ -20,16 +20,15 @@
     <div id="chat-box"></div>
 
     <div id="quick-actions">
-      <button class="quick-btn">Receitas para dias quentes</button>
-      <button class="quick-btn">Receitas para dias frios</button>
-      <button class="quick-btn">Calcular fermento</button>
+      <button class="quick-btn" type="button" data-msg="Receitas para dias quentes">Receitas para dias quentes</button>
+      <button class="quick-btn" type="button" data-msg="Receitas para dias frios">Receitas para dias frios</button>
+      <button class="quick-btn" type="button" data-msg="Quero calcular fermento para 1 kg com temperatura 25 graus">Calcular fermento</button>
     </div>
 
     <div id="input-container">
-      <input type="text" id="user-input" placeholder="Digite sua pergunta">
-      <button id="send-btn">Enviar</button>
+      <input type="text" id="user-input" placeholder="Digite sua pergunta" autocomplete="off" />
+      <button id="send-btn" type="button">Enviar</button>
     </div>
-
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>

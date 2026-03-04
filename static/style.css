@@ -1,3 +1,4 @@
+/* static/style.css */
 * {
   box-sizing: border-box;
 }
@@ -63,6 +64,7 @@ header h1 {
   font-size: 14px;
   line-height: 1.5;
   animation: fadeIn 0.2s ease-in-out;
+  white-space: pre-wrap;
 }
 
 @keyframes fadeIn {
@@ -160,4 +162,9 @@ header h1 {
 
 #send-btn:hover {
   background: #3b2414;
+}
+
+#send-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
