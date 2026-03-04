@@ -27,16 +27,13 @@ document.addEventListener("DOMContentLoaded", () => {
       body: JSON.stringify({ mensagem })
     });
 
+    const data = await resp.json().catch(() => ({}));
+
     if (!resp.ok) {
-      let detalhe = "";
-      try {
-        const j = await resp.json();
-        detalhe = j?.error || j?.erro || "";
-      } catch (_) {}
+      const detalhe = data?.error || data?.erro || "";
       throw new Error(detalhe || `HTTP ${resp.status}`);
     }
 
-    const data = await resp.json();
     return data?.resposta ?? "";
   }
 
