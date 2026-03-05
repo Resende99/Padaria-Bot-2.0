@@ -85,6 +85,15 @@ def calcular_fermento(kg, temp):
 
 
 # ====== MELHORIA 1: LEITURA DO PDF COM TEXTO LIMPO ======
+def limpar_espacos_pdf(texto: str) -> str:
+    """Remove espaços duplos entre palavras causados por PDFs mal formatados."""
+    # Remove espaços múltiplos entre palavras
+    texto = re.sub(r" {2,}", " ", texto)
+    # Remove espaço antes de pontuação
+    texto = re.sub(r" ([.,;:!?])", r"\1", texto)
+    return texto
+
+
 def extrair_texto_pdf(caminho_pdf):
     if not PDF_SUPPORT:
         return ""
@@ -94,6 +103,7 @@ def extrair_texto_pdf(caminho_pdf):
             leitor = PdfReader(f)
             for pagina in leitor.pages:
                 texto_pagina = pagina.extract_text() or ""
+                texto_pagina = limpar_espacos_pdf(texto_pagina)
 
                 linhas = texto_pagina.splitlines()
                 linhas_limpas = []
@@ -186,9 +196,11 @@ def normalizar_texto_pdf(txt: str) -> str:
 def extrair_receita_do_trecho(trecho: str):
     """
     Extrai nome, ingredientes e modo de preparo do trecho.
-    Formata o modo de preparo com passos numerados.
+    Suporta PDFs com marcadores ● e numeração inline.
     """
     t = normalizar_texto_pdf(trecho)
+    # Remove o cabeçalho do PDF (ex: "[PDF: arquivo.pdf]")
+    t = re.sub(r"\[PDF:[^\]]+\]", "", t).strip()
     linhas = [l.strip() for l in t.splitlines() if l.strip()]
 
     nome = None
@@ -198,27 +210,37 @@ def extrair_receita_do_trecho(trecho: str):
 
     for linha in linhas:
         linha_lower = linha.lower()
+        # Remove bullet ● do início para comparação
+        linha_sem_bullet = re.sub(r"^●\s*", "", linha).strip()
+        linha_sem_bullet_lower = linha_sem_bullet.lower()
 
-        # Detecta nome da receita (primeira linha relevante)
-        if nome is None and not any(p in linha_lower for p in ["ingrediente", "modo", "preparo", "●", "kg", "g ", "ml"]):
-            if len(linha) > 3:
-                nome = linha
+        # Detecta nome da receita (primeira linha curta sem marcadores técnicos)
+        if nome is None and not any(p in linha_lower for p in ["ingrediente", "modo", "preparo", "●", "kg", " g ", "ml", "xícara", "colher", "litro"]):
+            if 3 < len(linha) < 60:
+                nome = linha_sem_bullet
+                continue
 
-        # Detecta início de seções
-        if re.search(r"ingredientes?\s*:?$", linha_lower):
+        # Detecta início de seção Ingredientes
+        if re.search(r"●?\s*ingredientes?\s*:?$", linha_lower) or re.search(r"^ingredientes?\s*\(", linha_lower):
             secao_atual = "ingredientes"
+            # captura sufixo inline ex: "Ingredientes (Mousse):"
+            sufixo = re.sub(r"●?\s*ingredientes?\s*", "", linha_sem_bullet, flags=re.I).strip(": ")
+            if sufixo:
+                ingredientes_linhas.append(f"— {sufixo} —")
             continue
-        if re.search(r"modo\s*de\s*preparo\s*:?$", linha_lower):
+
+        # Detecta início de seção Modo de Preparo
+        if re.search(r"●?\s*modo\s*de\s*preparo\s*:?", linha_lower):
             secao_atual = "modo"
             continue
 
-        # Acumula conteúdo por seção
+        # Acumula por seção
         if secao_atual == "ingredientes":
-            ingredientes_linhas.append(linha)
+            ingredientes_linhas.append(linha_sem_bullet)
         elif secao_atual == "modo":
-            modo_linhas.append(linha)
+            modo_linhas.append(linha_sem_bullet)
 
-    # Formata modo de preparo com numeração
+    # Garante numeração no modo de preparo
     modo_formatado = []
     contador = 1
     for linha in modo_linhas:
@@ -330,15 +352,17 @@ def api_chat():
     ultima_receita = session.get("ultima_receita", "")
 
     # Regra: cálculo de fermento
-    if "fermento" in mensagem.lower() and "temperatura" in mensagem.lower():
+    # Intercepta qualquer mensagem com "fermento" para não cair na busca do PDF
+    if "fermento" in mensagem.lower():
         farinha = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
-        temp = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus|c)", mensagem, re.I)
+        temp = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius)", mensagem, re.I)
         if farinha and temp:
             fermento = calcular_fermento(farinha.group(1), temp.group(1))
             if fermento is not None:
-                return jsonify({"resposta": f"Para {farinha.group(1)} kg de farinha a {temp.group(1)}°C, use {fermento} g de fermento seco."}), 200
+                return jsonify({"resposta": f"Para {farinha.group(1)} kg de farinha a {temp.group(1)}\u00b0C, use {fermento} g de fermento seco."}), 200
             return jsonify({"resposta": "Valores inválidos."}), 200
-        return jsonify({"resposta": "Informe farinha (kg) e temperatura (°C)."}), 200
+        # Faltam dados — orienta o usuário
+        return jsonify({"resposta": "Para calcular o fermento, preciso de duas informações:\n\n1. Quantidade de farinha (em kg)\n2. Temperatura ambiente (em °C)\n\nDigite assim: \"calcular fermento para 2 kg com temperatura 28 graus\""}), 200
 
     # flags do pedido
     pediu_ingredientes = bool(re.search(r"\bingrediente\b", mensagem.lower()))

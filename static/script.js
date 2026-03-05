@@ -63,6 +63,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function mostrarMensagemFermento() {
+    // Mostra a pergunta do usuário no chat
+    appendMessage("Calcular fermento", "user-message");
+
+    // Bot responde pedindo as informações
+    const resposta =
+      "Para calcular o fermento, preciso de duas informações:\n\n" +
+      "1. Quantidade de farinha (em kg)\n" +
+      "2. Temperatura ambiente (em °C)\n\n" +
+      "Digite assim: \"calcular fermento para 2 kg com temperatura 28 graus\"";
+
+    appendMessage(resposta, "bot-message");
+    userInput.focus();
+  }
+
   sendBtn.addEventListener("click", () => sendMessage());
 
   userInput.addEventListener("keydown", (e) => {
@@ -72,6 +87,13 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".quick-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const msg = btn.getAttribute("data-msg") || btn.innerText;
+
+      // Botão de fermento: mostra instrução sem chamar a API
+      if (msg.toLowerCase().includes("fermento")) {
+        mostrarMensagemFermento();
+        return;
+      }
+
       sendMessage(msg);
     });
   });
