@@ -45,7 +45,7 @@ def salvar_cache():
         pass
 
 
-# ====== MANTIDO: CONTEXTO BASE ======
+# ====== CONTEXTO BASE ======
 contexto_base = (
     "Você é um assistente especializado em padarias, panificação e confeitaria. "
     "Você deve responder apenas sobre receitas de pães, bolos, massas, salgados e confeitaria artesanal. "
@@ -84,6 +84,7 @@ def calcular_fermento(kg, temp):
         return None
 
 
+# ====== MELHORIA 1: LEITURA DO PDF COM TEXTO LIMPO ======
 def extrair_texto_pdf(caminho_pdf):
     if not PDF_SUPPORT:
         return ""
@@ -92,7 +93,36 @@ def extrair_texto_pdf(caminho_pdf):
         with open(caminho_pdf, "rb") as f:
             leitor = PdfReader(f)
             for pagina in leitor.pages:
-                texto += (pagina.extract_text() or "") + "\n"
+                texto_pagina = pagina.extract_text() or ""
+
+                linhas = texto_pagina.splitlines()
+                linhas_limpas = []
+                buffer = ""
+
+                for linha in linhas:
+                    linha = linha.strip()
+                    if not linha:
+                        if buffer:
+                            linhas_limpas.append(buffer)
+                            buffer = ""
+                        linhas_limpas.append("")
+                        continue
+
+                    # Linha muito curta = provavelmente palavra quebrada
+                    if len(linha) < 25 and not linha.endswith((".", ":", ",")):
+                        buffer = (buffer + " " + linha).strip()
+                    else:
+                        if buffer:
+                            linhas_limpas.append((buffer + " " + linha).strip())
+                            buffer = ""
+                        else:
+                            linhas_limpas.append(linha)
+
+                if buffer:
+                    linhas_limpas.append(buffer)
+
+                texto += "\n".join(linhas_limpas) + "\n\n"
+
         return texto.strip()
     except:
         return ""
@@ -145,7 +175,6 @@ def buscar_no_pdf(mensagem: str):
     return None
 
 
-# ====== NOVO: FORMATAR RECEITA DO PDF (NOME + MODO, INGREDIENTES SÓ SE PEDIR) ======
 def normalizar_texto_pdf(txt: str) -> str:
     txt = (txt or "").replace("\r", "")
     txt = re.sub(r"[ \t]{2,}", " ", txt)
@@ -153,39 +182,59 @@ def normalizar_texto_pdf(txt: str) -> str:
     return txt.strip()
 
 
+# ====== MELHORIA 2: EXTRAÇÃO E FORMATAÇÃO COMO HUMANO ======
 def extrair_receita_do_trecho(trecho: str):
     """
-    Retorna (nome, ingredientes, modo).
-    Funciona melhor quando o trecho contém 'Ingredientes' e 'Modo de Preparo'.
+    Extrai nome, ingredientes e modo de preparo do trecho.
+    Formata o modo de preparo com passos numerados.
     """
     t = normalizar_texto_pdf(trecho)
+    linhas = [l.strip() for l in t.splitlines() if l.strip()]
 
     nome = None
-    ingredientes = None
-    modo = None
+    ingredientes_linhas = []
+    modo_linhas = []
+    secao_atual = None
 
-    # Nome (linha antes de Ingredientes)
-    m_nome = re.search(r"(?im)^\s*(.+?)\s*\n\s*●?\s*Ingredientes\s*:?", t)
-    if m_nome:
-        nome = m_nome.group(1).strip()
-    else:
-        # fallback: primeira linha não vazia
-        linhas = [l.strip() for l in t.splitlines() if l.strip()]
-        if linhas:
-            nome = linhas[0][:80]
+    for linha in linhas:
+        linha_lower = linha.lower()
 
-    m_ing = re.search(r"(?is)Ingredientes\s*:?(.*?)(Modo\s*de\s*Preparo\s*:?)", t)
-    if m_ing:
-        ingredientes = m_ing.group(1).strip()
+        # Detecta nome da receita (primeira linha relevante)
+        if nome is None and not any(p in linha_lower for p in ["ingrediente", "modo", "preparo", "●", "kg", "g ", "ml"]):
+            if len(linha) > 3:
+                nome = linha
 
-    m_modo = re.search(r"(?is)Modo\s*de\s*Preparo\s*:?(.*)$", t)
-    if m_modo:
-        modo = m_modo.group(1).strip()
+        # Detecta início de seções
+        if re.search(r"ingredientes?\s*:?$", linha_lower):
+            secao_atual = "ingredientes"
+            continue
+        if re.search(r"modo\s*de\s*preparo\s*:?$", linha_lower):
+            secao_atual = "modo"
+            continue
+
+        # Acumula conteúdo por seção
+        if secao_atual == "ingredientes":
+            ingredientes_linhas.append(linha)
+        elif secao_atual == "modo":
+            modo_linhas.append(linha)
+
+    # Formata modo de preparo com numeração
+    modo_formatado = []
+    contador = 1
+    for linha in modo_linhas:
+        if linha and not re.match(r"^\d+\.", linha):
+            modo_formatado.append(f"{contador}. {linha}")
+            contador += 1
+        else:
+            modo_formatado.append(linha)
+
+    ingredientes = "\n".join(ingredientes_linhas) if ingredientes_linhas else None
+    modo = "\n".join(modo_formatado) if modo_formatado else None
 
     return nome, ingredientes, modo
 
 
-def formatar_receita(nome: str, ingredientes: str, modo: str, pedir_ingredientes: bool) -> str | None:
+def formatar_receita(nome: str, ingredientes: str, modo: str, pedir_ingredientes: bool):
     if not nome or not modo:
         return None
 
@@ -195,7 +244,15 @@ def formatar_receita(nome: str, ingredientes: str, modo: str, pedir_ingredientes
     return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
 
 
-# ====== NOVO: AJUSTE PROPORCIONAL POR KG (ingredientes) ======
+# ====== MELHORIA 3: CÁLCULO PROPORCIONAL COM BASE REAL DO PDF ======
+def detectar_base_kg(trecho: str) -> float:
+    """Detecta para quantos kg a receita original foi feita."""
+    m = re.search(r"(?i)receita\s+para\s+(\d+(?:[.,]\d+)?)\s*kg", trecho)
+    if m:
+        return float(m.group(1).replace(",", "."))
+    return 1.0  # assume 1kg se não encontrar
+
+
 def detectar_kg_pedido(mensagem: str):
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem.lower())
     if not m:
@@ -289,13 +346,11 @@ def api_chat():
 
     # Ingredientes da última receita (pedido separado)
     if pediu_ingredientes and not kg_desejado:
-        # Se já salvamos uma receita completa na sessão, entrega ingredientes dela
         last_nome = session.get("ultima_receita_nome") or ultima_receita
         last_ing = session.get("ultima_receita_ingredientes", "")
         if last_ing:
             return jsonify({"resposta": f"Receita: {last_nome}\n\nIngredientes:\n{last_ing}"}), 200
         if ultima_receita:
-            # fallback: pede para IA listar ingredientes
             mensagem = f"Liste apenas os ingredientes da receita: {ultima_receita}"
         else:
             return jsonify({"resposta": "Não sei de qual receita você está falando."}), 200
@@ -309,7 +364,7 @@ def api_chat():
     if trecho:
         nome, ingredientes, modo = extrair_receita_do_trecho(trecho)
 
-        # salva última receita completa para pedidos posteriores (ingredientes / escala)
+        # salva última receita completa para pedidos posteriores
         if nome:
             session["ultima_receita_nome"] = nome
         if ingredientes:
@@ -317,16 +372,16 @@ def api_chat():
         if modo:
             session["ultima_receita_modo"] = modo
 
-        # Se o usuário pediu X kg, ajusta ingredientes proporcionalmente (base assumida 1 kg)
+        # MELHORIA 3: detecta base real do PDF antes de calcular fator
         if kg_desejado and ingredientes:
-            base = float(session.get("ultima_receita_base_kg", 1.0))
+            base = detectar_base_kg(trecho)
+            session["ultima_receita_base_kg"] = base
             fator = kg_desejado / base
             ingredientes = multiplicar_ingredientes(ingredientes, fator)
-            pediu_ingredientes = True  # ao ajustar kg, sempre manda ingredientes ajustados
+            pediu_ingredientes = True
 
         resposta_pdf = formatar_receita(nome or "Receita do PDF", ingredientes or "", modo or trecho, pediu_ingredientes)
         if not resposta_pdf:
-            # fallback se não conseguiu separar bem
             resposta_pdf = f"Encontrei isso na base de receitas:\n\n{trecho}"
 
         cache[chave_cache] = resposta_pdf
