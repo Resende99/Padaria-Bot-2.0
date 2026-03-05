@@ -152,24 +152,86 @@ carregar_pdfs_pasta()
 # PDF — BUSCA
 # ══════════════════════════════════════════
 CATALOGO_RECEITAS = {
-    "Sorvete":                           ["sorvete"],
-    "Mousse de Cafe com Chocolate":      ["mousse", "cafe"],
-    "Bolo de Abacaxi com Doce de Leite": ["abacaxi", "doce de leite"],
-    "Bolo de Fuba":                      ["fuba"],
-    "Bolo Cacarola":                     ["cacarola"],
-    "Bolo de Chocolate":                 ["peteleco", "chocolate"],
-    "Bolo Pudim":                        ["pudim"],
+    "Sorvete Artesanal":                         ["sorvete"],
+    "Mousse de Cafe com Chocolate":              ["mousse", "cafe"],
+    "Mousse de Morango sem Leite Condensado":    ["morango"],
+    "Bombom de Prestigio":                       ["prestigio", "coco ralado"],
+    "Bombom Surpresa com Pacoca":                ["pacoca", "surpresa"],
+    "Bicho de Pe":                               ["bicho de pe", "gelatina"],
+    "Pacoquinha de Leite Condensado":            ["pacoquinha", "amendoim"],
+    "Pizza de Chocolate Brigadeiro":             ["pizza"],
+    "Petit Gateau de Bacuri":                    ["petit", "gateau", "bacuri"],
+    "Sequilhos de Limao":                        ["sequilho", "limao"],
+    "Bolo de Abacaxi com Doce de Leite":         ["abacaxi", "doce de leite"],
+    "Bolo de Cenoura com Pudim de Chocolate":    ["cenoura"],
+    "Bolo de Couve":                             ["couve"],
+    "Bolo de Fuba":                              ["fuba"],
+    "Bolo de Mandioca Cremoso":                  ["mandioca"],
+    "Bolo de Chocolate Peteleco":                ["peteleco", "chocolate"],
+    "Bolo de Macaxeira Caramelizado":            ["macaxeira"],
+    "Pastel de Forno com Creme de Galinha":      ["pastel", "galinha", "guarana"],
+    "Pudim de Queijo":                           ["pudim"],
+    "Navete Francesa":                           ["navete"],
+    "Pao de Mel":                                ["mel"],
+    "Pao de Queijo Simples":                     ["pao de queijo"],
+    "Pao de Sal":                                ["pao de sal", "pao de leite"],
+    "Pao Caseiro Recheado":                      ["pao caseiro"],
+    "Mini Focaccia":                             ["focaccia"],
+    "Enroladinho de Salsicha":                   ["salsicha", "enroladinho"],
+    "Cookies de Chocolate":                      ["cookie"],
+    "Joelho ou Enroladinho de Presunto":         ["presunto", "joelho"],
+    "Baguete Recheada":                          ["baguete"],
+    "Bolinho de Queijo":                         ["bolinho"],
+    "Pao de Aveia":                              ["aveia"],
+    "Pao de Milho":                              ["milho"],
+    "Pao de Cenoura":                            ["pao de cenoura"],
+    "Pao de Abacate":                            ["abacate"],
+    "Torta de Escarola":                         ["escarola", "torta"],
+    "Pamonha de Forno":                          ["pamonha"],
+    "Empadinha de Leite Condensado":             ["empadinha"],
+    "Eclair":                                    ["eclair", "carolina"],
 }
 
 # Nomes reais no PDF (com acentos)
 NOMES_PDF = {
-    "Sorvete":                           "Sorvete",
-    "Mousse de Cafe com Chocolate":      "Mousse de Café com Chocolate",
-    "Bolo de Abacaxi com Doce de Leite": "Bolo de Abacaxi com Doce de Leite",
-    "Bolo de Fuba":                      "Bolo de Fubá",
-    "Bolo Cacarola":                     "Bolo Caçarola",
-    "Bolo de Chocolate":                 "Bolo de Chocolate",
-    "Bolo Pudim":                        "Bolo Pudim",
+    "Sorvete Artesanal":                         "Sorvete Artesanal",
+    "Mousse de Cafe com Chocolate":              "Mousse de Café com Chocolate",
+    "Mousse de Morango sem Leite Condensado":    "Mousse de Morango sem Leite Condensado",
+    "Bombom de Prestigio":                       "Bombom de Prestígio",
+    "Bombom Surpresa com Pacoca":                "Bombom Surpresa com Paçoca",
+    "Bicho de Pe":                               "Bicho de Pé (Docinho de Gelatina)",
+    "Pacoquinha de Leite Condensado":            "Paçoquinha de Leite Condensado",
+    "Pizza de Chocolate Brigadeiro":             "Pizza de Chocolate Brigadeiro com Morangos",
+    "Petit Gateau de Bacuri":                    "Petit Gateau de Bacuri",
+    "Sequilhos de Limao":                        "Sequilhos de Limão",
+    "Bolo de Abacaxi com Doce de Leite":         "Bolo de Abacaxi com Doce de Leite",
+    "Bolo de Cenoura com Pudim de Chocolate":    "Bolo de Cenoura com Pudim de Chocolate",
+    "Bolo de Couve":                             "Bolo de Couve",
+    "Bolo de Fuba":                              "Bolo de Fubá",
+    "Bolo de Mandioca Cremoso":                  "Bolo de Mandioca Cremoso",
+    "Bolo de Chocolate Peteleco":                "Bolo de Chocolate (Peteleco)",
+    "Bolo de Macaxeira Caramelizado":            "Bolo de Macaxeira Caramelizado",
+    "Pastel de Forno com Creme de Galinha":      "Pastel de Forno com Creme de Galinha",
+    "Pudim de Queijo":                           "Pudim de Queijo",
+    "Navete Francesa":                           "Navete Francesa",
+    "Pao de Mel":                                "Pão de Mel",
+    "Pao de Queijo Simples":                     "Pão de Queijo Simples",
+    "Pao de Sal":                                "Pão de Sal (Pão de Leite)",
+    "Pao Caseiro Recheado":                      "Pão Caseiro Recheado",
+    "Mini Focaccia":                             "Mini Focaccia",
+    "Enroladinho de Salsicha":                   "Enroladinho de Salsicha",
+    "Cookies de Chocolate":                      "Cookies de Chocolate",
+    "Joelho ou Enroladinho de Presunto":         "Joelho ou Enroladinho de Presunto e Queijo",
+    "Baguete Recheada":                          "Baguete Recheada",
+    "Bolinho de Queijo":                         "Bolinho de Queijo",
+    "Pao de Aveia":                              "Pão de Aveia com Iogurte",
+    "Pao de Milho":                              "Pão de Milho",
+    "Pao de Cenoura":                            "Pão de Cenoura",
+    "Pao de Abacate":                            "Pão de Abacate",
+    "Torta de Escarola":                         "Torta de Escarola",
+    "Pamonha de Forno":                          "Pamonha de Forno",
+    "Empadinha de Leite Condensado":             "Empadinha de Leite Condensado",
+    "Eclair":                                    "Éclair",
 }
 
 
@@ -179,14 +241,22 @@ def normalizar_str(s):
 
 
 def buscar_no_pdf(mensagem):
+    """
+    Busca pelo catálogo usando keywords normalizadas.
+    Retorna o bloco exato da receita no PDF.
+    """
     if not pdf_content:
         return None
 
     msg_norm = normalizar_str(mensagem)
 
+    # Não busca se for pedido de fermento puro
+    if re.search(r"\d", mensagem) and "kg" in msg_norm and "grau" in msg_norm:
+        return None
+
     chave_encontrada = None
     for chave, keywords in CATALOGO_RECEITAS.items():
-        if any(k in msg_norm for k in keywords):
+        if any(normalizar_str(k) in msg_norm for k in keywords):
             chave_encontrada = chave
             break
 
@@ -194,11 +264,19 @@ def buscar_no_pdf(mensagem):
         return None
 
     nome_real = NOMES_PDF[chave_encontrada]
+
+    # Tenta encontrar no PDF (com e sem acento)
     idx = pdf_content.find(nome_real)
     if idx == -1:
-        return None
+        # Tenta sem acento
+        pdf_norm = normalizar_str(pdf_content)
+        nome_norm = normalizar_str(nome_real)
+        idx_norm = pdf_norm.find(nome_norm)
+        if idx_norm == -1:
+            return None
+        idx = idx_norm
 
-    # Captura até o proximo nome de receita
+    # Captura até o próximo nome de receita
     fim = len(pdf_content)
     for outro_nome in NOMES_PDF.values():
         if outro_nome == nome_real:
@@ -375,14 +453,16 @@ def api_chat():
 
     # ══ 1. FERMENTO — intercepta antes de tudo ══
     aguardando_fermento = session.get("aguardando_fermento", False)
-
-    # Detecta pedido de CÁLCULO de fermento:
-    # - usuário já estava no fluxo (aguardando_fermento=True), OU
-    # - mensagem tem "fermento" + "calcul/temperatura/grau/kg" ou números
     msg_lower = mensagem.lower()
+
+    # Detecta pedido de cálculo de fermento:
+    # - botão "Calcular fermento" envia mensagem com "calcular fermento"
+    # - usuário já estava no fluxo aguardando dados (aguardando_fermento=True)
+    # - mensagem tem "fermento" + palavras de cálculo ou números
     palavras_calculo = ["calcul", "temperatura", "grau", "celsius", "quanto", "preciso"]
     tem_numero = bool(re.search(r"\d", mensagem))
-    eh_calculo_fermento = aguardando_fermento or (
+    eh_pedido_fermento = ("calcular fermento" in msg_lower or "calcule fermento" in msg_lower)
+    eh_calculo_fermento = aguardando_fermento or eh_pedido_fermento or (
         "fermento" in msg_lower and (
             any(p in msg_lower for p in palavras_calculo) or tem_numero
         )
@@ -398,29 +478,65 @@ def api_chat():
 
         if farinha_val and temp_val:
             session["aguardando_fermento"] = False
-            # Delega cálculo ao Groq para garantir precisão
-            prompt_fermento = (
-                f"Calcule a quantidade de fermento seco para panificação.\n"
-                f"Farinha: {farinha_val} kg | Temperatura ambiente: {temp_val}°C\n\n"
-                f"Use estas regras:\n"
-                f"- Abaixo de 20°C: 3,5% do peso da farinha\n"
-                f"- Entre 21°C e 25°C: 2%\n"
-                f"- Entre 26°C e 30°C: 1%\n"
-                f"- Acima de 30°C: 0,5%\n\n"
-                f"Responda apenas com o resultado no formato:\n"
-                f"Para X kg de farinha a Y°C, use Z g de fermento seco."
-            )
-            resposta_fermento = gerar_resposta(prompt_fermento)
+            # Calcula diretamente sem chamar IA
+            try:
+                kg = float(farinha_val.replace(",", "."))
+                temp = float(temp_val.replace(",", "."))
+                if temp < 20:
+                    pct = 3.5
+                elif temp <= 25:
+                    pct = 2.0
+                elif temp <= 30:
+                    pct = 1.0
+                else:
+                    pct = 0.5
+                gramas = round(kg * 1000 * pct / 100, 1)
+                resposta_fermento = (
+                    f"Para {kg} kg de farinha a {temp}°C, use {gramas} g de fermento seco.\n"
+                    f"(Percentual aplicado: {pct}%)"
+                )
+            except:
+                resposta_fermento = "Não consegui calcular. Verifique os valores informados."
             return jsonify({"resposta": resposta_fermento}), 200
-        
-        return jsonify({"resposta": "Valores inválidos. Verifique os números informados."}), 200
 
-        session["aguardando_fermento"] = True
-        return jsonify({"resposta": "Para calcular o fermento, preciso de duas informações:\n\n1. Quantidade de farinha (em kg)\n2. Temperatura ambiente (em °C)\n\nDigite assim: \"2 kg, 28 graus\""}), 200
+        # Tem "fermento" mas sem dados suficientes — pede os valores
+        if eh_pedido_fermento or aguardando_fermento:
+            session["aguardando_fermento"] = True
+            return jsonify({"resposta": (
+                "Para calcular o fermento, preciso de duas informações:\n\n"
+                "1. Quantidade de farinha (em kg)\n"
+                "2. Temperatura ambiente (em °C)\n\n"
+                "Digite assim: \"2 kg, 28 graus\""
+            )}), 200
+        # Tem "fermento" mas é menção casual (ex: "receita com fermento") — não intercepta
 
     # ══ 2. DIAS QUENTES / FRIOS — lista de receitas disponíveis ══
-    RECEITAS_QUENTES = ["Sorvete", "Mousse de Café com Chocolate", "Bolo de Abacaxi com Doce de Leite"]
-    RECEITAS_FRIAS = ["Bolo de Fubá", "Bolo Caçarola", "Bolo de Chocolate", "Bolo Pudim"]
+    RECEITAS_QUENTES = [
+        "Sorvete Artesanal",
+        "Mousse de Cafe com Chocolate",
+        "Mousse de Morango sem Leite Condensado",
+        "Bombom de Prestigio",
+        "Bombom Surpresa com Pacoca",
+        "Bicho de Pe",
+        "Pacoquinha de Leite Condensado",
+        "Pizza de Chocolate Brigadeiro",
+        "Petit Gateau de Bacuri",
+        "Sequilhos de Limao",
+    ]
+    RECEITAS_FRIAS = [
+        "Bolo de Abacaxi com Doce de Leite",
+        "Bolo de Cenoura com Pudim de Chocolate",
+        "Bolo de Couve",
+        "Bolo de Fuba",
+        "Bolo de Mandioca Cremoso",
+        "Bolo de Chocolate Peteleco",
+        "Bolo de Macaxeira Caramelizado",
+        "Pastel de Forno com Creme de Galinha",
+        "Pudim de Queijo",
+        "Navete Francesa",
+        "Pao de Mel",
+        "Joelho ou Enroladinho de Presunto",
+    ]
 
     if re.search(r"dias?.quentes?", msg_lower):
         # Pega receitas já enviadas para não repetir
