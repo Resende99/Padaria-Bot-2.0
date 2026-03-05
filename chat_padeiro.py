@@ -283,6 +283,12 @@ def extrair_receita_do_trecho(trecho):
 def formatar_receita(nome, ingredientes, modo, pedir_ingredientes):
     if not nome or not modo:
         return None
+    # Remove qualquer referência ao arquivo PDF do nome
+    nome = re.sub(r"\[PDF:[^\]]+\]", "", nome).strip()
+    nome = re.sub(r"Receitas\s+para\s+Dias\s+\w+", "", nome, flags=re.I).strip()
+    nome = nome.strip("[]()., ")
+    if not nome:
+        return None
     if pedir_ingredientes and ingredientes:
         return f"Receita: {nome}\n\nIngredientes:\n{ingredientes}\n\nModo de preparo:\n{modo}"
     return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
@@ -393,10 +399,22 @@ def api_chat():
 
         if farinha_val and temp_val:
             session["aguardando_fermento"] = False
-            fermento = calcular_fermento(farinha_val, temp_val)
-            if fermento is not None:
-                return jsonify({"resposta": f"Para {farinha_val} kg de farinha a {temp_val}°C, use {fermento} g de fermento seco."}), 200
-            return jsonify({"resposta": "Valores inválidos. Verifique os números informados."}), 200
+            # Delega cálculo ao Groq para garantir precisão
+            prompt_fermento = (
+                f"Calcule a quantidade de fermento seco para panificação.\n"
+                f"Farinha: {farinha_val} kg | Temperatura ambiente: {temp_val}°C\n\n"
+                f"Use estas regras:\n"
+                f"- Abaixo de 20°C: 3,5% do peso da farinha\n"
+                f"- Entre 21°C e 25°C: 2%\n"
+                f"- Entre 26°C e 30°C: 1%\n"
+                f"- Acima de 30°C: 0,5%\n\n"
+                f"Responda apenas com o resultado no formato:\n"
+                f"Para X kg de farinha a Y°C, use Z g de fermento seco."
+            )
+            resposta_fermento = gerar_resposta(prompt_fermento)
+            return jsonify({"resposta": resposta_fermento}), 200
+        
+        return jsonify({"resposta": "Valores inválidos. Verifique os números informados."}), 200
 
         session["aguardando_fermento"] = True
         return jsonify({"resposta": "Para calcular o fermento, preciso de duas informações:\n\n1. Quantidade de farinha (em kg)\n2. Temperatura ambiente (em °C)\n\nDigite assim: \"2 kg, 28 graus\""}), 200
@@ -455,7 +473,30 @@ def api_chat():
         mensagem = f"receita de {escolhida}"
         msg_lower = mensagem.lower()
 
-    # ══ 3. FLAGS ══
+    # ══ 3. FILTRO DE TEMA ══
+    # Palavras que indicam assunto fora de panificação
+    temas_proibidos = [
+        "politic", "futebol", "tecnologia", "programação", "clima", "tempo",
+        "notícia", "filme", "música", "jogo", "esporte", "economia",
+        "presidente", "governo", "medicina", "saúde", "covid", "vacina",
+        "computador", "celular", "carro", "viagem", "hotel"
+    ]
+    # Palavras que indicam panificação (libera a busca)
+    temas_permitidos = [
+        "receita", "bolo", "pão", "massa", "recheio", "cobertura", "sorvete",
+        "mousse", "confeit", "padaria", "forno", "assar", "ingrediente",
+        "farinha", "fermento", "açúcar", "manteiga", "leite", "ovo",
+        "chocolate", "creme", "brigadeiro", "salgado", "torta", "biscoito",
+        "cookie", "croissant", "brioche", "fubá", "tapioca"
+    ]
+    
+    eh_tema_proibido = any(t in msg_lower for t in temas_proibidos)
+    eh_tema_permitido = any(t in msg_lower for t in temas_permitidos)
+    
+    if eh_tema_proibido and not eh_tema_permitido:
+        return jsonify({"resposta": "Desculpe, só falo sobre panificação e confeitaria."}), 200
+
+    # ══ 4. FLAGS ══
     pediu_ingredientes = bool(re.search(r"\bingrediente\b", mensagem.lower()))
     kg_desejado = detectar_kg_pedido(mensagem)
 
@@ -473,7 +514,7 @@ def api_chat():
     if chave_cache in cache:
         return jsonify({"resposta": cache[chave_cache]}), 200
 
-    # ══ 4. BUSCA NO PDF ══
+    # ══ 5. BUSCA NO PDF ══
     trecho = buscar_no_pdf(mensagem)
     if trecho:
         nome, ingredientes, modo = extrair_receita_do_trecho(trecho)
@@ -498,7 +539,7 @@ def api_chat():
         salvar_cache()
         return jsonify({"resposta": resposta_pdf}), 200
 
-    # ══ 5. BUSCA NA WEB ══
+    # ══ 6. BUSCA NA WEB ══
     resposta_web = buscar_receita_web(mensagem)
     if resposta_web:
         cache[chave_cache] = resposta_web
@@ -508,7 +549,7 @@ def api_chat():
             session["ultima_receita"] = match.group(2).strip().lower()
         return jsonify({"resposta": resposta_web}), 200
 
-    # ══ 6. FALLBACK IA ══
+    # ══ 7. FALLBACK IA ══
     contexto = contexto_base + "\n\nHistórico:\n" + "\n".join(historico)
     if pdf_content:
         contexto += f"\n\n[CONTEÚDO DOS PDFs]\n{pdf_content[:6000]}"
