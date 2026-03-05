@@ -5,6 +5,7 @@ import json
 import time
 import threading
 import re
+import random
 
 try:
     from PyPDF2 import PdfReader
@@ -370,7 +371,19 @@ def api_chat():
     # ══ 1. FERMENTO — intercepta antes de tudo ══
     aguardando_fermento = session.get("aguardando_fermento", False)
 
-    if "fermento" in mensagem.lower() or aguardando_fermento:
+    # Detecta pedido de CÁLCULO de fermento:
+    # - usuário já estava no fluxo (aguardando_fermento=True), OU
+    # - mensagem tem "fermento" + "calcul/temperatura/grau/kg" ou números
+    msg_lower = mensagem.lower()
+    palavras_calculo = ["calcul", "temperatura", "grau", "celsius", "quanto", "preciso"]
+    tem_numero = bool(re.search(r"\d", mensagem))
+    eh_calculo_fermento = aguardando_fermento or (
+        "fermento" in msg_lower and (
+            any(p in msg_lower for p in palavras_calculo) or tem_numero
+        )
+    )
+
+    if eh_calculo_fermento:
         numeros = re.findall(r"(\d+(?:[.,]\d+)?)", mensagem)
         farinha_match = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
         temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius|grau)", mensagem, re.I)
@@ -388,7 +401,61 @@ def api_chat():
         session["aguardando_fermento"] = True
         return jsonify({"resposta": "Para calcular o fermento, preciso de duas informações:\n\n1. Quantidade de farinha (em kg)\n2. Temperatura ambiente (em °C)\n\nDigite assim: \"2 kg, 28 graus\""}), 200
 
-    # ══ 2. FLAGS ══
+    # ══ 2. DIAS QUENTES / FRIOS — lista de receitas disponíveis ══
+    RECEITAS_QUENTES = ["Sorvete", "Mousse de Café com Chocolate", "Bolo de Abacaxi com Doce de Leite"]
+    RECEITAS_FRIAS = ["Bolo de Fubá", "Bolo Caçarola", "Bolo de Chocolate", "Bolo Pudim"]
+
+    if re.search(r"dias?.quentes?", msg_lower):
+        # Pega receitas já enviadas para não repetir
+        enviadas = session.get("quentes_enviadas", [])
+        disponiveis = [r for r in RECEITAS_QUENTES if r not in enviadas]
+        if not disponiveis:
+            # Resetou tudo, começa de novo
+            enviadas = []
+            disponiveis = RECEITAS_QUENTES[:]
+        escolhida = random.choice(disponiveis)
+        enviadas.append(escolhida)
+        session["quentes_enviadas"] = enviadas
+        session["ultima_categoria"] = "quentes"
+        # Busca a receita no PDF ou IA
+        mensagem = f"receita de {escolhida}"
+        msg_lower = mensagem.lower()
+
+    if re.search(r"dias?.frios?", msg_lower):
+        enviadas = session.get("frias_enviadas", [])
+        disponiveis = [r for r in RECEITAS_FRIAS if r not in enviadas]
+        if not disponiveis:
+            enviadas = []
+            disponiveis = RECEITAS_FRIAS[:]
+        escolhida = random.choice(disponiveis)
+        enviadas.append(escolhida)
+        session["frias_enviadas"] = enviadas
+        session["ultima_categoria"] = "frias"
+        mensagem = f"receita de {escolhida}"
+        msg_lower = mensagem.lower()
+
+    # Usuário pediu mais receitas da mesma categoria
+    if re.search(r"(mais|outra|proxima|próxima)", msg_lower) and session.get("ultima_categoria"):
+        cat = session.get("ultima_categoria")
+        if cat == "quentes":
+            mensagem = "Receitas para dias quentes"
+        else:
+            mensagem = "Receitas para dias frios"
+        msg_lower = mensagem.lower()
+        # Redireciona para o bloco acima — chama recursivamente via redirect interno
+        enviadas = session.get(f"{cat}_enviadas", [])
+        lista = RECEITAS_QUENTES if cat == "quentes" else RECEITAS_FRIAS
+        disponiveis = [r for r in lista if r not in enviadas]
+        if not disponiveis:
+            enviadas = []
+            disponiveis = lista[:]
+        escolhida = random.choice(disponiveis)
+        enviadas.append(escolhida)
+        session[f"{cat}_enviadas"] = enviadas
+        mensagem = f"receita de {escolhida}"
+        msg_lower = mensagem.lower()
+
+    # ══ 3. FLAGS ══
     pediu_ingredientes = bool(re.search(r"\bingrediente\b", mensagem.lower()))
     kg_desejado = detectar_kg_pedido(mensagem)
 
@@ -406,7 +473,7 @@ def api_chat():
     if chave_cache in cache:
         return jsonify({"resposta": cache[chave_cache]}), 200
 
-    # ══ 3. BUSCA NO PDF ══
+    # ══ 4. BUSCA NO PDF ══
     trecho = buscar_no_pdf(mensagem)
     if trecho:
         nome, ingredientes, modo = extrair_receita_do_trecho(trecho)
@@ -431,7 +498,7 @@ def api_chat():
         salvar_cache()
         return jsonify({"resposta": resposta_pdf}), 200
 
-    # ══ 4. BUSCA NA WEB ══
+    # ══ 5. BUSCA NA WEB ══
     resposta_web = buscar_receita_web(mensagem)
     if resposta_web:
         cache[chave_cache] = resposta_web
@@ -441,7 +508,7 @@ def api_chat():
             session["ultima_receita"] = match.group(2).strip().lower()
         return jsonify({"resposta": resposta_web}), 200
 
-    # ══ 5. FALLBACK IA ══
+    # ══ 6. FALLBACK IA ══
     contexto = contexto_base + "\n\nHistórico:\n" + "\n".join(historico)
     if pdf_content:
         contexto += f"\n\n[CONTEÚDO DOS PDFs]\n{pdf_content[:6000]}"
