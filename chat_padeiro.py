@@ -1,11 +1,6 @@
 # chat_padeiro.py
 from flask import Flask, render_template, request, jsonify, session
-import os
-import json
-import time
-import threading
-import re
-import random
+import os, json, time, threading, re, random, unicodedata
 
 try:
     from PyPDF2 import PdfReader
@@ -21,666 +16,399 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_key_trocar")
 CACHE_FILE = "receitas_cache.json"
 PDF_FOLDER = "pdfs_upload"
 os.makedirs(PDF_FOLDER, exist_ok=True)
-
 pdf_content = ""
 
+def norm(s):
+    return unicodedata.normalize("NFD", s).encode("ascii","ignore").decode("ascii").lower()
 
-# ══════════════════════════════════════════
-# CACHE
-# ══════════════════════════════════════════
+# ══ CACHE ══
 def carregar_cache():
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+    try:
+        with open(CACHE_FILE,"r",encoding="utf-8") as f: return json.load(f)
+    except: return {}
 
 cache = carregar_cache()
 
 def salvar_cache():
     try:
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False, indent=2)
-    except:
-        pass
+        with open(CACHE_FILE,"w",encoding="utf-8") as f: json.dump(cache,f,ensure_ascii=False,indent=2)
+    except: pass
 
-def limpar_cache_periodico():
-    global cache
-    while True:
-        time.sleep(3600)
-        cache = carregar_cache()
+threading.Thread(target=lambda: [time.sleep(3600) or cache.update(carregar_cache()) for _ in iter(int,1)], daemon=True).start()
 
-threading.Thread(target=limpar_cache_periodico, daemon=True).start()
-
-
-# ══════════════════════════════════════════
-# CONTEXTO BASE DA IA
-# ══════════════════════════════════════════
+# ══ CONTEXTO BASE ══
 contexto_base = (
-    "Você é um assistente especializado em padarias, panificação e confeitaria. "
+    "Você é um assistente de padaria e confeitaria. "
+    "SEMPRE responda em português brasileiro. "
     "Responda apenas sobre receitas de pães, bolos, massas, salgados e confeitaria artesanal. "
-    "Se o usuário elogiar, diga apenas: 'Obrigado! Fico feliz que tenha gostado da receita.' "
-    "Se a pergunta for fora do tema, diga: 'Desculpe, só falo sobre panificação e confeitaria.'\n\n"
-    "Regras de resposta:\n"
-    "1. Ao pedir receita: envie apenas o nome e o modo de preparo. Não liste ingredientes a menos que peçam.\n"
-    "2. Se pedirem ingredientes depois: envie lista completa com quantidades.\n"
-    "3. Se pedirem receita para X kg: recalcule os ingredientes proporcionalmente.\n"
-    "4. Respostas objetivas e técnicas. Sem floreios, emojis ou linguagem informal.\n"
-    "5. Não comente sabor, aparência ou textura.\n"
-    "6. Para cálculo de fermento: abaixo de 20 use 3,5%; 21-25 use 2%; 26-30 use 1%; acima de 30 use 0,5%. Resultado em gramas.\n"
+    "Regras: ao pedir receita envie só nome e modo de preparo. "
+    "Se pedirem ingredientes envie a lista completa. "
+    "Respostas objetivas e técnicas. Sem emojis.\n"
 )
 
+# ══ FILTRO DE TEMA ══
+TEMAS_PANIFICACAO = [
+    "receita","bolo","pao","massa","recheio","cobertura","sorvete","mousse",
+    "confeit","padaria","forno","assar","ingrediente","farinha","fermento",
+    "acucar","manteiga","leite","ovo","chocolate","creme","brigadeiro",
+    "salgado","torta","biscoito","cookie","eclair","pamonha","empadinha",
+    "focaccia","baguete","tapioca","fuba","mandioca","macaxeira","abacaxi",
+    "pudim","doce","bombom","pacoca","queijo","presunto","salsicha","frango",
+    "pizza","petit","sequilho","navete","mel","couve","cenoura","abacate",
+    "milho","aveia","morango","cafe","iogurte","amido","polvilho","requeijao",
+    "calda","ganache","glace","fazer","preparar","quente","frio","dias",
+    "temperatura","grau","kg","mais","outra","proxima","porcao",
+]
+CONTEXTO_CURTO = ["sim","nao","ok","legal","certo","entendi","obrigado","obrigada"]
 
-# ══════════════════════════════════════════
-# CÁLCULO DE FERMENTO
-# ══════════════════════════════════════════
-def calcular_fermento(kg, temp):
+def eh_panificacao(mensagem):
+    m = norm(mensagem).strip()
+    if len(m) <= 4 or m in CONTEXTO_CURTO:
+        return True
+    return any(t in m for t in TEMAS_PANIFICACAO)
+
+# ══ FERMENTO ══
+def calcular_fermento(farinha_val, temp_val):
     try:
-        kg = float(str(kg).replace(",", "."))
-        temp = float(str(temp).replace(",", "."))
-        if kg <= 0 or temp < 0:
-            return None
-        p = 0.035 if temp < 20 else 0.02 if temp <= 25 else 0.01 if temp <= 30 else 0.005
-        return round(kg * 1000 * p, 1)
+        kg = float(farinha_val.replace(",","."))
+        temp = float(temp_val.replace(",","."))
+        pct = 3.5 if temp < 20 else 2.0 if temp <= 25 else 1.0 if temp <= 30 else 0.5
+        gramas = round(kg * 1000 * pct / 100, 1)
+        return f"Para {kg} kg de farinha a {temp}°C, use {gramas} g de fermento seco.\n(Percentual: {pct}%)"
     except:
         return None
 
-
-# ══════════════════════════════════════════
-# PDF — LEITURA
-# ══════════════════════════════════════════
-def limpar_espacos_pdf(texto):
-    texto = re.sub(r" {2,}", " ", texto)
-    texto = re.sub(r" ([.,;:!?])", r"\1", texto)
-    return texto
-
-def extrair_texto_pdf(caminho_pdf):
-    if not PDF_SUPPORT:
-        return ""
+# ══ PDF — LEITURA ══
+def extrair_texto_pdf(caminho):
+    if not PDF_SUPPORT: return ""
     try:
         texto = ""
-        with open(caminho_pdf, "rb") as f:
-            leitor = PdfReader(f)
-            for pagina in leitor.pages:
-                texto_pagina = pagina.extract_text() or ""
-                texto_pagina = limpar_espacos_pdf(texto_pagina)
-                linhas = texto_pagina.splitlines()
-                linhas_limpas = []
-                buffer = ""
-                for linha in linhas:
-                    linha = linha.strip()
-                    if not linha:
-                        if buffer:
-                            linhas_limpas.append(buffer)
-                            buffer = ""
-                        linhas_limpas.append("")
-                        continue
-                    if len(linha) < 25 and not linha.endswith((".", ":", ",")):
-                        buffer = (buffer + " " + linha).strip()
-                    else:
-                        if buffer:
-                            linhas_limpas.append((buffer + " " + linha).strip())
-                            buffer = ""
-                        else:
-                            linhas_limpas.append(linha)
-                if buffer:
-                    linhas_limpas.append(buffer)
-                texto += "\n".join(linhas_limpas) + "\n\n"
+        with open(caminho,"rb") as f:
+            for p in PdfReader(f).pages:
+                texto += (p.extract_text() or "") + "\n\n"
         return texto.strip()
-    except:
-        return ""
+    except: return ""
 
 def carregar_pdfs_pasta():
     global pdf_content
     pdf_content = ""
-    if not os.path.exists(PDF_FOLDER):
-        return
-    for arquivo in os.listdir(PDF_FOLDER):
-        if arquivo.lower().endswith(".pdf"):
-            caminho = os.path.join(PDF_FOLDER, arquivo)
-            texto = extrair_texto_pdf(caminho)
-            if texto:
-                pdf_content += f"\n\n[PDF: {arquivo}]\n{texto}"
-                print(f"PDF carregado: {arquivo}")
+    if not os.path.exists(PDF_FOLDER): return
+    for arq in os.listdir(PDF_FOLDER):
+        if arq.lower().endswith(".pdf"):
+            t = extrair_texto_pdf(os.path.join(PDF_FOLDER, arq))
+            if t:
+                pdf_content += f"\n\n[PDF: {arq}]\n{t}"
+                print(f"PDF carregado: {arq}")
 
 carregar_pdfs_pasta()
 
-
-# ══════════════════════════════════════════
-# PDF — BUSCA
-# ══════════════════════════════════════════
-CATALOGO_RECEITAS = {
-    "Sorvete Artesanal":                         ["sorvete"],
-    "Mousse de Cafe com Chocolate":              ["mousse", "cafe"],
-    "Mousse de Morango sem Leite Condensado":    ["morango"],
-    "Bombom de Prestigio":                       ["prestigio", "coco ralado"],
-    "Bombom Surpresa com Pacoca":                ["pacoca", "surpresa"],
-    "Bicho de Pe":                               ["bicho de pe", "gelatina"],
-    "Pacoquinha de Leite Condensado":            ["pacoquinha", "amendoim"],
-    "Pizza de Chocolate Brigadeiro":             ["pizza"],
-    "Petit Gateau de Bacuri":                    ["petit", "gateau", "bacuri"],
-    "Sequilhos de Limao":                        ["sequilho", "limao"],
-    "Bolo de Abacaxi com Doce de Leite":         ["abacaxi", "doce de leite"],
-    "Bolo de Cenoura com Pudim de Chocolate":    ["cenoura"],
-    "Bolo de Couve":                             ["couve"],
-    "Bolo de Fuba":                              ["fuba"],
-    "Bolo de Mandioca Cremoso":                  ["mandioca"],
-    "Bolo de Chocolate Peteleco":                ["peteleco", "chocolate"],
-    "Bolo de Macaxeira Caramelizado":            ["macaxeira"],
-    "Pastel de Forno com Creme de Galinha":      ["pastel", "galinha", "guarana"],
-    "Pudim de Queijo":                           ["pudim"],
-    "Navete Francesa":                           ["navete"],
-    "Pao de Mel":                                ["mel"],
-    "Pao de Queijo Simples":                     ["pao de queijo"],
-    "Pao de Sal":                                ["pao de sal", "pao de leite"],
-    "Pao Caseiro Recheado":                      ["pao caseiro"],
-    "Mini Focaccia":                             ["focaccia"],
-    "Enroladinho de Salsicha":                   ["salsicha", "enroladinho"],
-    "Cookies de Chocolate":                      ["cookie"],
-    "Joelho ou Enroladinho de Presunto":         ["presunto", "joelho"],
-    "Baguete Recheada":                          ["baguete"],
-    "Bolinho de Queijo":                         ["bolinho"],
-    "Pao de Aveia":                              ["aveia"],
-    "Pao de Milho":                              ["milho"],
-    "Pao de Cenoura":                            ["pao de cenoura"],
-    "Pao de Abacate":                            ["abacate"],
-    "Torta de Escarola":                         ["escarola", "torta"],
-    "Pamonha de Forno":                          ["pamonha"],
-    "Empadinha de Leite Condensado":             ["empadinha"],
-    "Eclair":                                    ["eclair", "carolina"],
+# ══ CATÁLOGO ══
+CATALOGO = {
+    "Sorvete Artesanal":                        ["sorvete"],
+    "Mousse de Cafe com Chocolate":             ["mousse","cafe"],
+    "Mousse de Morango sem Leite Condensado":   ["morango"],
+    "Bombom de Prestigio":                      ["prestigio"],
+    "Bombom Surpresa com Pacoca":               ["pacoca","surpresa"],
+    "Bicho de Pe":                              ["bicho de pe"],
+    "Pacoquinha de Leite Condensado":           ["pacoquinha","amendoim"],
+    "Pizza de Chocolate Brigadeiro":            ["pizza"],
+    "Petit Gateau de Bacuri":                   ["petit","gateau","bacuri"],
+    "Sequilhos de Limao":                       ["sequilho","limao"],
+    "Bolo de Abacaxi com Doce de Leite":        ["abacaxi","doce de leite"],
+    "Bolo de Cenoura com Pudim de Chocolate":   ["cenoura"],
+    "Bolo de Couve":                            ["couve"],
+    "Bolo de Fuba":                             ["fuba"],
+    "Bolo de Mandioca Cremoso":                 ["mandioca"],
+    "Bolo de Chocolate Peteleco":               ["peteleco","chocolate"],
+    "Bolo de Macaxeira Caramelizado":           ["macaxeira"],
+    "Pastel de Forno com Creme de Galinha":     ["pastel","galinha","guarana"],
+    "Pudim de Queijo":                          ["pudim"],
+    "Navete Francesa":                          ["navete"],
+    "Pao de Mel":                               ["pao de mel"],
+    "Pao de Queijo Simples":                    ["pao de queijo"],
+    "Pao de Sal":                               ["pao de sal","pao de leite"],
+    "Pao Caseiro Recheado":                     ["pao caseiro"],
+    "Mini Focaccia":                            ["focaccia"],
+    "Enroladinho de Salsicha":                  ["salsicha","enroladinho"],
+    "Cookies de Chocolate":                     ["cookie"],
+    "Joelho ou Enroladinho de Presunto":        ["presunto","joelho"],
+    "Baguete Recheada":                         ["baguete"],
+    "Bolinho de Queijo":                        ["bolinho"],
+    "Pao de Aveia":                             ["aveia"],
+    "Pao de Milho":                             ["milho"],
+    "Pao de Cenoura":                           ["pao de cenoura"],
+    "Pao de Abacate":                           ["abacate"],
+    "Torta de Escarola":                        ["escarola","torta"],
+    "Pamonha de Forno":                         ["pamonha"],
+    "Empadinha de Leite Condensado":            ["empadinha"],
+    "Eclair":                                   ["eclair","carolina"],
 }
 
-# Nomes reais no PDF (com acentos)
 NOMES_PDF = {
-    "Sorvete Artesanal":                         "Sorvete Artesanal",
-    "Mousse de Cafe com Chocolate":              "Mousse de Café com Chocolate",
-    "Mousse de Morango sem Leite Condensado":    "Mousse de Morango sem Leite Condensado",
-    "Bombom de Prestigio":                       "Bombom de Prestígio",
-    "Bombom Surpresa com Pacoca":                "Bombom Surpresa com Paçoca",
-    "Bicho de Pe":                               "Bicho de Pé (Docinho de Gelatina)",
-    "Pacoquinha de Leite Condensado":            "Paçoquinha de Leite Condensado",
-    "Pizza de Chocolate Brigadeiro":             "Pizza de Chocolate Brigadeiro com Morangos",
-    "Petit Gateau de Bacuri":                    "Petit Gateau de Bacuri",
-    "Sequilhos de Limao":                        "Sequilhos de Limão",
-    "Bolo de Abacaxi com Doce de Leite":         "Bolo de Abacaxi com Doce de Leite",
-    "Bolo de Cenoura com Pudim de Chocolate":    "Bolo de Cenoura com Pudim de Chocolate",
-    "Bolo de Couve":                             "Bolo de Couve",
-    "Bolo de Fuba":                              "Bolo de Fubá",
-    "Bolo de Mandioca Cremoso":                  "Bolo de Mandioca Cremoso",
-    "Bolo de Chocolate Peteleco":                "Bolo de Chocolate (Peteleco)",
-    "Bolo de Macaxeira Caramelizado":            "Bolo de Macaxeira Caramelizado",
-    "Pastel de Forno com Creme de Galinha":      "Pastel de Forno com Creme de Galinha",
-    "Pudim de Queijo":                           "Pudim de Queijo",
-    "Navete Francesa":                           "Navete Francesa",
-    "Pao de Mel":                                "Pão de Mel",
-    "Pao de Queijo Simples":                     "Pão de Queijo Simples",
-    "Pao de Sal":                                "Pão de Sal (Pão de Leite)",
-    "Pao Caseiro Recheado":                      "Pão Caseiro Recheado",
-    "Mini Focaccia":                             "Mini Focaccia",
-    "Enroladinho de Salsicha":                   "Enroladinho de Salsicha",
-    "Cookies de Chocolate":                      "Cookies de Chocolate",
-    "Joelho ou Enroladinho de Presunto":         "Joelho ou Enroladinho de Presunto e Queijo",
-    "Baguete Recheada":                          "Baguete Recheada",
-    "Bolinho de Queijo":                         "Bolinho de Queijo",
-    "Pao de Aveia":                              "Pão de Aveia com Iogurte",
-    "Pao de Milho":                              "Pão de Milho",
-    "Pao de Cenoura":                            "Pão de Cenoura",
-    "Pao de Abacate":                            "Pão de Abacate",
-    "Torta de Escarola":                         "Torta de Escarola",
-    "Pamonha de Forno":                          "Pamonha de Forno",
-    "Empadinha de Leite Condensado":             "Empadinha de Leite Condensado",
-    "Eclair":                                    "Éclair",
+    "Sorvete Artesanal":                        "Sorvete Artesanal",
+    "Mousse de Cafe com Chocolate":             "Mousse de Café com Chocolate",
+    "Mousse de Morango sem Leite Condensado":   "Mousse de Morango sem Leite Condensado",
+    "Bombom de Prestigio":                      "Bombom de Prestígio",
+    "Bombom Surpresa com Pacoca":               "Bombom Surpresa com Paçoca",
+    "Bicho de Pe":                              "Bicho de Pé (Docinho de Gelatina)",
+    "Pacoquinha de Leite Condensado":           "Paçoquinha de Leite Condensado",
+    "Pizza de Chocolate Brigadeiro":            "Pizza de Chocolate Brigadeiro com Morangos",
+    "Petit Gateau de Bacuri":                   "Petit Gateau de Bacuri",
+    "Sequilhos de Limao":                       "Sequilhos de Limão",
+    "Bolo de Abacaxi com Doce de Leite":        "Bolo de Abacaxi com Doce de Leite",
+    "Bolo de Cenoura com Pudim de Chocolate":   "Bolo de Cenoura com Pudim de Chocolate",
+    "Bolo de Couve":                            "Bolo de Couve",
+    "Bolo de Fuba":                             "Bolo de Fubá",
+    "Bolo de Mandioca Cremoso":                 "Bolo de Mandioca Cremoso",
+    "Bolo de Chocolate Peteleco":               "Bolo de Chocolate (Peteleco)",
+    "Bolo de Macaxeira Caramelizado":           "Bolo de Macaxeira Caramelizado",
+    "Pastel de Forno com Creme de Galinha":     "Pastel de Forno com Creme de Galinha",
+    "Pudim de Queijo":                          "Pudim de Queijo",
+    "Navete Francesa":                          "Navete Francesa",
+    "Pao de Mel":                               "Pão de Mel",
+    "Pao de Queijo Simples":                    "Pão de Queijo Simples",
+    "Pao de Sal":                               "Pão de Sal (Pão de Leite)",
+    "Pao Caseiro Recheado":                     "Pão Caseiro Recheado",
+    "Mini Focaccia":                            "Mini Focaccia",
+    "Enroladinho de Salsicha":                  "Enroladinho de Salsicha",
+    "Cookies de Chocolate":                     "Cookies de Chocolate",
+    "Joelho ou Enroladinho de Presunto":        "Joelho ou Enroladinho de Presunto e Queijo",
+    "Baguete Recheada":                         "Baguete Recheada",
+    "Bolinho de Queijo":                        "Bolinho de Queijo",
+    "Pao de Aveia":                             "Pão de Aveia com Iogurte",
+    "Pao de Milho":                             "Pão de Milho",
+    "Pao de Cenoura":                           "Pão de Cenoura",
+    "Pao de Abacate":                           "Pão de Abacate",
+    "Torta de Escarola":                        "Torta de Escarola",
+    "Pamonha de Forno":                         "Pamonha de Forno",
+    "Empadinha de Leite Condensado":            "Empadinha de Leite Condensado",
+    "Eclair":                                   "Éclair",
 }
 
+RECEITAS_QUENTES = [
+    "Sorvete Artesanal","Mousse de Cafe com Chocolate",
+    "Mousse de Morango sem Leite Condensado","Bombom de Prestigio",
+    "Bombom Surpresa com Pacoca","Bicho de Pe",
+    "Pacoquinha de Leite Condensado","Pizza de Chocolate Brigadeiro",
+    "Petit Gateau de Bacuri","Sequilhos de Limao",
+]
+RECEITAS_FRIAS = [
+    "Bolo de Abacaxi com Doce de Leite","Bolo de Cenoura com Pudim de Chocolate",
+    "Bolo de Couve","Bolo de Fuba","Bolo de Mandioca Cremoso",
+    "Bolo de Chocolate Peteleco","Bolo de Macaxeira Caramelizado",
+    "Pastel de Forno com Creme de Galinha","Pudim de Queijo",
+    "Navete Francesa","Pao de Mel","Joelho ou Enroladinho de Presunto",
+]
 
-def normalizar_str(s):
-    import unicodedata
-    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii").lower()
-
-
+# ══ BUSCA NO PDF ══
 def buscar_no_pdf(mensagem):
-    """
-    Busca pelo catálogo usando keywords normalizadas.
-    Retorna o bloco exato da receita no PDF.
-    """
-    if not pdf_content:
-        return None
-
-    msg_norm = normalizar_str(mensagem)
-
-    # Não busca se for pedido de fermento puro
-    if re.search(r"\d", mensagem) and "kg" in msg_norm and "grau" in msg_norm:
-        return None
-
-    chave_encontrada = None
-    for chave, keywords in CATALOGO_RECEITAS.items():
-        if any(normalizar_str(k) in msg_norm for k in keywords):
-            chave_encontrada = chave
+    if not pdf_content: return None
+    m = norm(mensagem)
+    chave = None
+    for k, kws in CATALOGO.items():
+        if any(norm(kw) in m for kw in kws):
+            chave = k
             break
-
-    if not chave_encontrada:
-        return None
-
-    nome_real = NOMES_PDF[chave_encontrada]
-
-    # Tenta encontrar no PDF (com e sem acento)
+    if not chave: return None
+    nome_real = NOMES_PDF[chave]
     idx = pdf_content.find(nome_real)
-    if idx == -1:
-        # Tenta sem acento
-        pdf_norm = normalizar_str(pdf_content)
-        nome_norm = normalizar_str(nome_real)
-        idx_norm = pdf_norm.find(nome_norm)
-        if idx_norm == -1:
-            return None
-        idx = idx_norm
-
-    # Captura até o próximo nome de receita
+    if idx == -1: return None
     fim = len(pdf_content)
-    for outro_nome in NOMES_PDF.values():
-        if outro_nome == nome_real:
-            continue
-        pos = pdf_content.find(outro_nome, idx + len(nome_real))
-        if pos != -1 and pos < fim:
-            fim = pos
-
+    for outro in NOMES_PDF.values():
+        if outro == nome_real: continue
+        pos = pdf_content.find(outro, idx + len(nome_real))
+        if 0 < pos < fim: fim = pos
     return pdf_content[idx:fim].strip()
 
-def normalizar_texto_pdf(txt):
-    txt = (txt or "").replace("\r", "")
-    txt = re.sub(r"[ \t]{2,}", " ", txt)
-    txt = re.sub(r"\n{3,}", "\n\n", txt)
-    return txt.strip()
-
-def extrair_receita_do_trecho(trecho):
+# ══ EXTRAÇÃO ══
+def extrair_receita(trecho):
     linhas = [l.strip() for l in trecho.splitlines() if l.strip()]
-
-    nome = None
-    ingredientes_linhas = []
-    modo_linhas = []
+    nome = ingredientes_linhas = modo_linhas = None
+    ingredientes_linhas, modo_linhas = [], []
     secao = None
-
     for linha in linhas:
-        linha_lower = linha.lower()
-        linha_limpa = linha.strip()
-
-        # Nome: primeira linha que nao seja secao
+        ll = linha.lower()
         if nome is None:
-            if not any(p in linha_lower for p in ["ingrediente", "modo de preparo", "receitas para"]):
-                nome = linha_limpa
+            if not any(p in ll for p in ["ingrediente","modo de preparo","receitas para","origem:"]):
+                nome = re.sub(r"Padaria\s+Artesanal\s+CRI","",linha,flags=re.I).strip()
                 continue
-
-        # Detecta secao Ingredientes
-        if linha_lower.strip() == "ingredientes":
-            secao = "ingredientes"
+        if ll.strip() == "ingredientes": secao = "ing"; continue
+        if "modo de preparo" in ll: secao = "modo"; continue
+        if re.match(r"^\[.+\]$", linha):
+            if secao == "ing": ingredientes_linhas.append("--- " + linha.strip("[] ") + " ---")
             continue
+        if re.match(r"^(obs|dica|nota|origem)", ll): continue
+        item = re.sub(r"^\d+\.\s*","",linha).strip()
+        item = re.sub(r"Padaria\s+Artesanal\s+CRI","",item,flags=re.I).strip()
+        if secao == "ing" and item: ingredientes_linhas.append(item)
+        elif secao == "modo" and item: modo_linhas.append(item)
 
-        # Detecta secao Modo de Preparo
-        if "modo de preparo" in linha_lower:
-            secao = "modo"
-            continue
+    ing = "\n".join(("  "+l if not l.startswith("---") else "\n"+l) for l in ingredientes_linhas).strip() if ingredientes_linhas else None
+    modo = "\n".join(f"{i}. {l}" for i,l in enumerate(modo_linhas,1)) if modo_linhas else None
+    return nome, ing, modo
 
-        # Separadores de subsecao ([ Massa ], [ Cobertura ], etc)
-        if re.match(r"^\[.+\]$", linha_limpa):
-            if secao == "ingredientes":
-                label = linha_limpa.strip("[] ")
-                ingredientes_linhas.append("--- " + label + " ---")
-            continue
-
-        # Ignora obs/dica
-        if re.match(r"^(obs|dica|nota)", linha_lower):
-            continue
-
-        if secao == "ingredientes":
-            item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
-            if item:
-                ingredientes_linhas.append(item)
-        elif secao == "modo":
-            item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
-            if item:
-                modo_linhas.append(item)
-
-    ingredientes = None
-    if ingredientes_linhas:
-        partes = []
-        for l in ingredientes_linhas:
-            if l.startswith("---"):
-                partes.append("\n" + l)
-            else:
-                partes.append("  " + l)
-        ingredientes = "\n".join(partes).strip()
-
-    modo = None
-    if modo_linhas:
-        modo = "\n".join(str(i) + ". " + l for i, l in enumerate(modo_linhas, 1))
-
-    return nome, ingredientes, modo
-
-def formatar_receita(nome, ingredientes, modo, pedir_ingredientes):
-    if not nome or not modo:
-        return None
-    # Remove qualquer referência ao arquivo PDF do nome
-    nome = re.sub(r"\[PDF:[^\]]+\]", "", nome).strip()
-    nome = re.sub(r"Receitas\s+para\s+Dias\s+\w+", "", nome, flags=re.I).strip()
-    nome = nome.strip("[]()., ")
-    if not nome:
-        return None
-    if pedir_ingredientes and ingredientes:
-        return f"Receita: {nome}\n\nIngredientes:\n{ingredientes}\n\nModo de preparo:\n{modo}"
+def formatar(nome, ing, modo, quer_ing):
+    if not nome or not modo: return None
+    nome = re.sub(r"\[PDF:[^\]]+\]","",nome).strip()
+    nome = re.sub(r"Receitas?\s+para\s+Dias?\s+\w+","",nome,flags=re.I).strip()
+    nome = re.sub(r"Padaria\s+Artesanal\s+CRI","",nome,flags=re.I).strip()
+    nome = re.sub(r"Origem:.*","",nome,flags=re.I).strip().strip("[]().,—– ")
+    if not nome: return None
+    if quer_ing and ing:
+        return f"Receita: {nome}\n\nIngredientes:\n{ing}\n\nModo de preparo:\n{modo}"
     return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
 
+# ══ ESCALA KG ══
+def detectar_kg(msg):
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", msg.lower())
+    return float(m.group(1).replace(",",".")) if m else None
 
-# ══════════════════════════════════════════
-# BUSCA NA WEB
-# ══════════════════════════════════════════
-def buscar_receita_web(mensagem):
-    """Usa o Groq compound-beta que tem acesso nativo à web."""
-    try:
-        return buscar_e_responder_web(mensagem)
-    except Exception as e:
-        print(f"Erro busca web: {e}")
-        return None
-
-
-# ══════════════════════════════════════════
-# ESCALA POR KG
-# ══════════════════════════════════════════
-def detectar_base_kg(trecho):
-    m = re.search(r"(?i)receita\s+para\s+(\d+(?:[.,]\d+)?)\s*kg", trecho)
-    return float(m.group(1).replace(",", ".")) if m else 1.0
-
-def detectar_kg_pedido(mensagem):
-    m = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem.lower())
-    if not m:
-        return None
-    try:
-        return float(m.group(1).replace(",", "."))
-    except:
-        return None
-
-def multiplicar_ingredientes(ingredientes_texto, fator):
-    linhas = [l.strip() for l in (ingredientes_texto or "").splitlines() if l.strip()]
+def escalar_ingredientes(texto, fator):
     out = []
-    for linha in linhas:
-        m = re.match(r"^(\d+(?:[.,]\d+)?)\s*(.*)$", linha)
+    for linha in (texto or "").splitlines():
+        m = re.match(r"^(\d+(?:[.,]\d+)?)\s*(.*)$", linha.strip())
         if m:
-            num = float(m.group(1).replace(",", "."))
-            novo = num * fator
-            novo_str = str(int(round(novo))) if abs(novo - round(novo)) < 1e-9 else str(round(novo, 2)).replace(".", ",")
-            out.append(f"{novo_str} {m.group(2)}".strip())
+            novo = float(m.group(1).replace(",",".")) * fator
+            s = str(int(round(novo))) if abs(novo-round(novo))<1e-9 else str(round(novo,2)).replace(".",",")
+            out.append(f"{s} {m.group(2)}".strip())
         else:
             out.append(linha)
     return "\n".join(out)
 
-
-# ══════════════════════════════════════════
-# ROTAS
-# ══════════════════════════════════════════
+# ══ ROTAS ══
 @app.route("/")
-def index():
-    return render_template("index.html")
+def index(): return render_template("index.html")
 
 @app.route("/api/v1/health")
-def health():
-    return jsonify({"status": "ok"}), 200
+def health(): return jsonify({"status":"ok"}), 200
 
 @app.route("/upload_pdf", methods=["POST"])
 def upload_pdf():
     global pdf_content
-    if "pdf" not in request.files:
-        return jsonify({"erro": "Nenhum arquivo fornecido"}), 400
-    file = request.files["pdf"]
-    if not file.filename.lower().endswith(".pdf"):
-        return jsonify({"erro": "Apenas PDFs são aceitos"}), 400
-    caminho = os.path.join(PDF_FOLDER, file.filename)
-    file.save(caminho)
+    if "pdf" not in request.files: return jsonify({"erro":"Nenhum arquivo"}), 400
+    f = request.files["pdf"]
+    if not f.filename.lower().endswith(".pdf"): return jsonify({"erro":"Apenas PDFs"}), 400
+    f.save(os.path.join(PDF_FOLDER, f.filename))
     carregar_pdfs_pasta()
-    return jsonify({"status": "ok", "mensagem": f"PDF '{file.filename}' carregado com sucesso!"}), 200
+    return jsonify({"status":"ok","mensagem":f"PDF '{f.filename}' carregado!"}), 200
 
 @app.route("/api/v1/chat", methods=["POST"])
 def api_chat():
     dados = request.get_json() or {}
     mensagem = (dados.get("mensagem") or "").strip()
+    if not mensagem: return jsonify({"resposta":"Digite algo."}), 200
 
-    if not mensagem:
-        return jsonify({"resposta": "Digite algo."}), 200
+    msg_lower = mensagem.lower()
+    msg_norm  = norm(mensagem)
 
     historico = session.get("historico", [])
     historico.append(mensagem)
     session["historico"] = historico[-3:]
-    ultima_receita = session.get("ultima_receita", "")
 
-    # ══ 1. FERMENTO — intercepta antes de tudo ══
-    aguardando_fermento = session.get("aguardando_fermento", False)
-    msg_lower = mensagem.lower()
+    # ── 1. FERMENTO ──
+    aguardando = session.get("aguardando_fermento", False)
+    eh_pedido  = any(p in msg_norm for p in ["calcular fermento","calcule fermento","calculo fermento"])
+    tem_kg     = bool(re.search(r"\d.*kg|kg.*\d", msg_lower))
+    tem_grau   = bool(re.search(r"\d.*grau|\d.*°|\d.*celsius", msg_lower))
+    eh_resposta = aguardando and bool(re.search(r"\d+", mensagem))
+    eh_fermento = eh_pedido or eh_resposta or ("fermento" in msg_lower and (tem_kg or tem_grau))
 
-    # Detecta pedido de cálculo de fermento:
-    # - botão "Calcular fermento" envia mensagem com "calcular fermento"
-    # - usuário já estava no fluxo aguardando dados (aguardando_fermento=True)
-    # - mensagem tem "fermento" + palavras de cálculo ou números
-    palavras_calculo = ["calcul", "temperatura", "grau", "celsius", "quanto", "preciso"]
-    tem_numero = bool(re.search(r"\d", mensagem))
-    eh_pedido_fermento = ("calcular fermento" in msg_lower or "calcule fermento" in msg_lower)
-    eh_calculo_fermento = aguardando_fermento or eh_pedido_fermento or (
-        "fermento" in msg_lower and (
-            any(p in msg_lower for p in palavras_calculo) or tem_numero
-        )
-    )
-
-    if eh_calculo_fermento:
-        numeros = re.findall(r"(\d+(?:[.,]\d+)?)", mensagem)
-        farinha_match = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
-        temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius|grau)", mensagem, re.I)
-
-        farinha_val = farinha_match.group(1) if farinha_match else (numeros[0] if len(numeros) >= 1 else None)
-        temp_val = temp_match.group(1) if temp_match else (numeros[1] if len(numeros) >= 2 else None)
-
-        if farinha_val and temp_val:
+    if eh_fermento:
+        fm = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
+        tm = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius|grau)", mensagem, re.I)
+        nums = re.findall(r"(\d+(?:[.,]\d+)?)", mensagem)
+        fv = fm.group(1) if fm else (nums[0] if nums else None)
+        tv = tm.group(1) if tm else (nums[1] if len(nums)>1 else None)
+        if fv and tv:
             session["aguardando_fermento"] = False
-            # Calcula diretamente sem chamar IA
-            try:
-                kg = float(farinha_val.replace(",", "."))
-                temp = float(temp_val.replace(",", "."))
-                if temp < 20:
-                    pct = 3.5
-                elif temp <= 25:
-                    pct = 2.0
-                elif temp <= 30:
-                    pct = 1.0
-                else:
-                    pct = 0.5
-                gramas = round(kg * 1000 * pct / 100, 1)
-                resposta_fermento = (
-                    f"Para {kg} kg de farinha a {temp}°C, use {gramas} g de fermento seco.\n"
-                    f"(Percentual aplicado: {pct}%)"
-                )
-            except:
-                resposta_fermento = "Não consegui calcular. Verifique os valores informados."
-            return jsonify({"resposta": resposta_fermento}), 200
+            res = calcular_fermento(fv, tv)
+            return jsonify({"resposta": res or "Não consegui calcular. Verifique os valores."}), 200
+        session["aguardando_fermento"] = True
+        return jsonify({"resposta":(
+            "Para calcular o fermento, preciso de duas informações:\n\n"
+            "1. Quantidade de farinha (em kg)\n"
+            "2. Temperatura ambiente (em °C)\n\n"
+            "Digite assim: \"2 kg, 28 graus\""
+        )}), 200
 
-        # Tem "fermento" mas sem dados suficientes — pede os valores
-        if eh_pedido_fermento or aguardando_fermento:
-            session["aguardando_fermento"] = True
-            return jsonify({"resposta": (
-                "Para calcular o fermento, preciso de duas informações:\n\n"
-                "1. Quantidade de farinha (em kg)\n"
-                "2. Temperatura ambiente (em °C)\n\n"
-                "Digite assim: \"2 kg, 28 graus\""
-            )}), 200
-        # Tem "fermento" mas é menção casual (ex: "receita com fermento") — não intercepta
-
-    # ══ 2. DIAS QUENTES / FRIOS — lista de receitas disponíveis ══
-    RECEITAS_QUENTES = [
-        "Sorvete Artesanal",
-        "Mousse de Cafe com Chocolate",
-        "Mousse de Morango sem Leite Condensado",
-        "Bombom de Prestigio",
-        "Bombom Surpresa com Pacoca",
-        "Bicho de Pe",
-        "Pacoquinha de Leite Condensado",
-        "Pizza de Chocolate Brigadeiro",
-        "Petit Gateau de Bacuri",
-        "Sequilhos de Limao",
-    ]
-    RECEITAS_FRIAS = [
-        "Bolo de Abacaxi com Doce de Leite",
-        "Bolo de Cenoura com Pudim de Chocolate",
-        "Bolo de Couve",
-        "Bolo de Fuba",
-        "Bolo de Mandioca Cremoso",
-        "Bolo de Chocolate Peteleco",
-        "Bolo de Macaxeira Caramelizado",
-        "Pastel de Forno com Creme de Galinha",
-        "Pudim de Queijo",
-        "Navete Francesa",
-        "Pao de Mel",
-        "Joelho ou Enroladinho de Presunto",
-    ]
-
-    if re.search(r"dias?.quentes?", msg_lower):
-        # Pega receitas já enviadas para não repetir
-        enviadas = session.get("quentes_enviadas", [])
-        disponiveis = [r for r in RECEITAS_QUENTES if r not in enviadas]
-        if not disponiveis:
-            # Resetou tudo, começa de novo
-            enviadas = []
-            disponiveis = RECEITAS_QUENTES[:]
-        escolhida = random.choice(disponiveis)
-        enviadas.append(escolhida)
-        session["quentes_enviadas"] = enviadas
-        session["ultima_categoria"] = "quentes"
-        # Busca a receita no PDF ou IA
-        mensagem = f"receita de {escolhida}"
-        msg_lower = mensagem.lower()
-
-    if re.search(r"dias?.frios?", msg_lower):
-        enviadas = session.get("frias_enviadas", [])
-        disponiveis = [r for r in RECEITAS_FRIAS if r not in enviadas]
-        if not disponiveis:
-            enviadas = []
-            disponiveis = RECEITAS_FRIAS[:]
-        escolhida = random.choice(disponiveis)
-        enviadas.append(escolhida)
-        session["frias_enviadas"] = enviadas
-        session["ultima_categoria"] = "frias"
-        mensagem = f"receita de {escolhida}"
-        msg_lower = mensagem.lower()
-
-    # Usuário pediu mais receitas da mesma categoria
-    if re.search(r"(mais|outra|proxima|próxima)", msg_lower) and session.get("ultima_categoria"):
-        cat = session.get("ultima_categoria")
-        if cat == "quentes":
-            mensagem = "Receitas para dias quentes"
-        else:
-            mensagem = "Receitas para dias frios"
-        msg_lower = mensagem.lower()
-        # Redireciona para o bloco acima — chama recursivamente via redirect interno
-        enviadas = session.get(f"{cat}_enviadas", [])
+    # ── 2. DIAS QUENTES / FRIOS ──
+    escolhida = None
+    if re.search(r"dias?.quentes?", msg_norm):
+        lista, cat = RECEITAS_QUENTES, "quentes"
+    elif re.search(r"dias?.frios?", msg_norm):
+        lista, cat = RECEITAS_FRIAS, "frias"
+    elif re.search(r"\b(mais|outra|proxima)\b", msg_norm) and session.get("ultima_categoria"):
+        cat = session["ultima_categoria"]
         lista = RECEITAS_QUENTES if cat == "quentes" else RECEITAS_FRIAS
+    else:
+        lista, cat = None, None
+
+    if lista:
+        enviadas = session.get(f"{cat}_enviadas", [])
         disponiveis = [r for r in lista if r not in enviadas]
         if not disponiveis:
-            enviadas = []
-            disponiveis = lista[:]
+            enviadas, disponiveis = [], lista[:]
         escolhida = random.choice(disponiveis)
         enviadas.append(escolhida)
         session[f"{cat}_enviadas"] = enviadas
-        mensagem = f"receita de {escolhida}"
+        session["ultima_categoria"] = cat
+        kws = CATALOGO.get(escolhida, [escolhida])
+        mensagem = f"receita de {kws[0]}"
         msg_lower = mensagem.lower()
+        msg_norm  = norm(mensagem)
 
-    # ══ 3. FILTRO DE TEMA ══
-    # Palavras que indicam assunto fora de panificação
-    temas_proibidos = [
-        "politic", "futebol", "tecnologia", "programação", "clima", "tempo",
-        "notícia", "filme", "música", "jogo", "esporte", "economia",
-        "presidente", "governo", "medicina", "saúde", "covid", "vacina",
-        "computador", "celular", "carro", "viagem", "hotel"
-    ]
-    # Palavras que indicam panificação (libera a busca)
-    temas_permitidos = [
-        "receita", "bolo", "pão", "massa", "recheio", "cobertura", "sorvete",
-        "mousse", "confeit", "padaria", "forno", "assar", "ingrediente",
-        "farinha", "fermento", "açúcar", "manteiga", "leite", "ovo",
-        "chocolate", "creme", "brigadeiro", "salgado", "torta", "biscoito",
-        "cookie", "croissant", "brioche", "fubá", "tapioca"
-    ]
-    
-    eh_tema_proibido = any(t in msg_lower for t in temas_proibidos)
-    eh_tema_permitido = any(t in msg_lower for t in temas_permitidos)
-    
-    if eh_tema_proibido and not eh_tema_permitido:
-        return jsonify({"resposta": "Desculpe, só falo sobre panificação e confeitaria."}), 200
+    # ── 3. FILTRO DE TEMA ──
+    if not eh_panificacao(mensagem):
+        return jsonify({"resposta":"Só falo sobre panificação e cálculo de fermento."}), 200
 
-    # ══ 4. FLAGS ══
-    pediu_ingredientes = bool(re.search(r"\bingrediente\b", mensagem.lower()))
-    kg_desejado = detectar_kg_pedido(mensagem)
+    # ── 4. INGREDIENTES DA ÚLTIMA RECEITA ──
+    quer_ing = bool(re.search(r"\bingrediente\b", msg_lower))
+    kg = detectar_kg(mensagem)
 
-    if pediu_ingredientes and not kg_desejado:
-        last_nome = session.get("ultima_receita_nome") or ultima_receita
-        last_ing = session.get("ultima_receita_ingredientes", "")
+    if quer_ing and not kg:
+        last_nome = session.get("ultima_receita_nome","")
+        last_ing  = session.get("ultima_receita_ingredientes","")
         if last_ing:
-            return jsonify({"resposta": f"Receita: {last_nome}\n\nIngredientes:\n{last_ing}"}), 200
-        if ultima_receita:
-            mensagem = f"Liste apenas os ingredientes da receita: {ultima_receita}"
-        else:
-            return jsonify({"resposta": "Não sei de qual receita você está falando."}), 200
+            return jsonify({"resposta":f"Receita: {last_nome}\n\nIngredientes:\n{last_ing}"}), 200
 
-    chave_cache = f"{mensagem}|{ultima_receita}"
+    # ── 5. CACHE ──
+    chave_cache = f"{mensagem}|{session.get('ultima_receita','')}"
     if chave_cache in cache:
         return jsonify({"resposta": cache[chave_cache]}), 200
 
-    # ══ 5. BUSCA NO PDF ══
+    # ── 6. BUSCA NO PDF ──
     trecho = buscar_no_pdf(mensagem)
     if trecho:
-        nome, ingredientes, modo = extrair_receita_do_trecho(trecho)
-
-        if nome:
-            session["ultima_receita_nome"] = nome
-        if ingredientes:
-            session["ultima_receita_ingredientes"] = ingredientes
-        if modo:
-            session["ultima_receita_modo"] = modo
-
-        if kg_desejado and ingredientes:
-            base = detectar_base_kg(trecho)
-            ingredientes = multiplicar_ingredientes(ingredientes, kg_desejado / base)
-            pediu_ingredientes = True
-
-        resposta_pdf = formatar_receita(nome or "Receita", ingredientes or "", modo or trecho, pediu_ingredientes)
-        if not resposta_pdf:
-            resposta_pdf = f"Encontrei isso na base de receitas:\n\n{trecho}"
-
-        cache[chave_cache] = resposta_pdf
+        nome, ing, modo = extrair_receita(trecho)
+        if nome: session["ultima_receita_nome"] = nome
+        if ing:  session["ultima_receita_ingredientes"] = ing
+        if modo: session["ultima_receita_modo"] = modo
+        if kg and ing:
+            ing = escalar_ingredientes(ing, kg)
+            quer_ing = True
+        resp = formatar(nome or "Receita", ing or "", modo or trecho, quer_ing)
+        if not resp: resp = f"Encontrei na base:\n\n{trecho[:1500]}"
+        cache[chave_cache] = resp
         salvar_cache()
-        return jsonify({"resposta": resposta_pdf}), 200
+        return jsonify({"resposta": resp}), 200
 
-    # ══ 6. BUSCA NA WEB ══
-    resposta_web = buscar_receita_web(mensagem)
-    if resposta_web:
-        cache[chave_cache] = resposta_web
-        salvar_cache()
-        match = re.search(r"(?i)(receita de|para fazer)\s+([a-zà-ú\s]+)", mensagem)
-        if match:
-            session["ultima_receita"] = match.group(2).strip().lower()
-        return jsonify({"resposta": resposta_web}), 200
+    # ── 7. BUSCA WEB (Groq compound-beta) ──
+    try:
+        resp_web = buscar_e_responder_web(mensagem)
+        if resp_web:
+            cache[chave_cache] = resp_web
+            salvar_cache()
+            return jsonify({"resposta": resp_web}), 200
+    except Exception as e:
+        print(f"Erro web: {e}")
 
-    # ══ 7. FALLBACK IA ══
-    contexto = contexto_base + "\n\nHistórico:\n" + "\n".join(historico)
-    if pdf_content:
-        contexto += f"\n\n[CONTEÚDO DOS PDFs]\n{pdf_content[:6000]}"
-
-    prompt = f"{contexto}\nUsuário: {mensagem}"
-    resposta = gerar_resposta(prompt)
-
-    cache[chave_cache] = resposta
+    # ── 8. FALLBACK IA (Groq llama3) ──
+    prompt = contexto_base + "\n\nHistórico:\n" + "\n".join(historico) + f"\nUsuário: {mensagem}"
+    resp = gerar_resposta(prompt)
+    cache[chave_cache] = resp
     salvar_cache()
-
-    match = re.search(r"(?i)(receita de|para fazer)\s+([a-zà-ú\s]+)", mensagem)
-    if match:
-        session["ultima_receita"] = match.group(2).strip().lower()
-
-    return jsonify({"resposta": resposta}), 200
+    return jsonify({"resposta": resp}), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT","5000")), debug=True)
