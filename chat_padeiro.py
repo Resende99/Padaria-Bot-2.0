@@ -175,33 +175,57 @@ def buscar_no_pdf(mensagem):
 
 
 def extrair_receita(trecho):
-    linhas = [l.strip() for l in trecho.splitlines() if l.strip()]
+    # Junta linhas quebradas (continuação começa com espaço)
+    linhas_raw = trecho.splitlines()
+    linhas = []
+    for l in linhas_raw:
+        if l.startswith(" ") and linhas:
+            linhas[-1] = linhas[-1].rstrip() + " " + l.strip()
+        else:
+            linhas.append(l)
+    linhas = [l.strip() for l in linhas if l.strip()]
+
     nome, ingredientes_linhas, modo_linhas = None, [], []
     secao = None
 
     for linha in linhas:
         ll = linha.lower()
+
         if nome is None:
             if not any(p in ll for p in ["ingrediente", "modo de preparo", "receitas para", "origem:"]):
                 nome = re.sub(r"Padaria\s+Artesanal\s+CRI", "", linha, flags=re.I).strip()
                 continue
-        if ll.strip() == "ingredientes":
+
+        if ll.startswith("origem:"):
+            continue
+
+        if ll.strip() in ("ingredientes", "ingredientes:"):
             secao = "ing"
             continue
+
         if "modo de preparo" in ll:
             secao = "modo"
             continue
+
         if re.match(r"^\[.+\]$", linha):
             if secao == "ing":
                 ingredientes_linhas.append("--- " + linha.strip("[] ") + " ---")
             continue
-        if re.match(r"^(obs|dica|nota|origem)", ll):
+
+        if re.match(r"^(obs|dica|nota)", ll):
             continue
-        item = re.sub(r"^\d+\.\s*", "", linha).strip()
+
+        # Remove bullet \x7f e numeração
+        item = re.sub(r"^\x7f\s*", "", linha)
+        item = re.sub(r"^\d+\.\s*", "", item).strip()
         item = re.sub(r"Padaria\s+Artesanal\s+CRI", "", item, flags=re.I).strip()
-        if secao == "ing" and item:
+
+        if not item:
+            continue
+
+        if secao == "ing":
             ingredientes_linhas.append(item)
-        elif secao == "modo" and item:
+        elif secao == "modo":
             modo_linhas.append(item)
 
     ing  = "\n".join(("  " + l if not l.startswith("---") else "\n" + l) for l in ingredientes_linhas).strip() or None
