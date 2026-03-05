@@ -81,6 +81,7 @@ def buscar_e_responder_web(pergunta: str, retries: int = 2, backoff: float = 2.0
     "10. Se o usuário pedir para calcular fermento com base na temperatura e quantidade de farinha, "
     " use a seguinte regra prática: abaixo de 20°C use 3,5% de fermento seco; entre 21°C e 25°C use 2%; "
     " entre 26°C e 30°C use 1%; acima de 30°C use 0,5%. Retorne o resultado em gramas.\n"
+    "11. Se o usuario falar obrigado, responda apenas 'De nada! Fico feliz em ajudar com suas receitas.'"
     )
 
     data = {
