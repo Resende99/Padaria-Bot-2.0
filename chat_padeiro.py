@@ -166,23 +166,49 @@ threading.Thread(target=limpar_cache_periodico, daemon=True).start()
 
 
 def buscar_no_pdf(mensagem: str):
-    """Busca simples: retorna um trecho do PDF se achar palavra-chave relevante."""
+    """
+    Busca no PDF e retorna o bloco completo da receita encontrada.
+    Detecta o início da receita pelo número + nome (ex: '1. Sorvete')
+    e captura até o início da próxima receita.
+    """
     if not pdf_content:
         return None
 
     texto_lower = pdf_content.lower()
     termos = re.findall(r"[a-zà-ú]{4,}", mensagem.lower())
-    stop = {"receita", "como", "fazer", "para", "quero", "preciso", "pode", "dias", "quentes", "frios"}
+    stop = {"receita", "como", "fazer", "para", "quero", "preciso", "pode", "dias", "quentes", "frios", "manda", "qual"}
     termos = [t for t in termos if t not in stop]
+
+    padrao_cabecalho = re.compile(r"(?m)^\d+\.\s+[A-Za-záéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ][^\n]{2,}")
 
     for t in termos[:8]:
         pos = texto_lower.find(t)
-        if pos != -1:
-            inicio = max(0, pos - 600)
-            fim = min(len(pdf_content), pos + 1200)
-            return pdf_content[inicio:fim].strip()
+        if pos == -1:
+            continue
+
+        # Recua até o início do bloco da receita
+        trecho_antes = pdf_content[max(0, pos - 800):pos]
+        m = None
+        for match in padrao_cabecalho.finditer(trecho_antes):
+            m = match
+        if m:
+            inicio = max(0, pos - 800) + m.start()
+        else:
+            inicio = max(0, pos - 200)
+
+        # Avança até o próximo cabeçalho de receita
+        trecho_depois = pdf_content[pos:min(len(pdf_content), pos + 2000)]
+        proximo = padrao_cabecalho.search(trecho_depois[10:])
+        if proximo:
+            fim = pos + 10 + proximo.start()
+        else:
+            fim = min(len(pdf_content), pos + 2000)
+
+        return pdf_content[inicio:fim].strip()
 
     return None
+
+
 
 
 def normalizar_texto_pdf(txt: str) -> str:
@@ -195,63 +221,100 @@ def normalizar_texto_pdf(txt: str) -> str:
 # ====== MELHORIA 2: EXTRAÇÃO E FORMATAÇÃO COMO HUMANO ======
 def extrair_receita_do_trecho(trecho: str):
     """
-    Extrai nome, ingredientes e modo de preparo do trecho.
-    Suporta PDFs com marcadores ● e numeração inline.
+    Extrai nome, ingredientes e modo de preparo.
+    Suporta o padrão do PDF: bullet ●, numeração inline, múltiplas seções.
     """
     t = normalizar_texto_pdf(trecho)
-    # Remove o cabeçalho do PDF (ex: "[PDF: arquivo.pdf]")
+    # Remove cabeçalho [PDF: ...]
     t = re.sub(r"\[PDF:[^\]]+\]", "", t).strip()
+
     linhas = [l.strip() for l in t.splitlines() if l.strip()]
 
     nome = None
-    ingredientes_linhas = []
-    modo_linhas = []
+    ingredientes_blocos = []   # lista de (titulo_secao, [linhas])
+    modo_blocos = []           # lista de (titulo_secao, [linhas])
     secao_atual = None
+    titulo_secao = ""
+    buffer_linhas = []
+
+    def fechar_secao():
+        nonlocal buffer_linhas
+        if secao_atual == "ingredientes" and buffer_linhas:
+            ingredientes_blocos.append((titulo_secao, list(buffer_linhas)))
+        elif secao_atual == "modo" and buffer_linhas:
+            modo_blocos.append((titulo_secao, list(buffer_linhas)))
+        buffer_linhas = []
 
     for linha in linhas:
         linha_lower = linha.lower()
-        # Remove bullet ● do início para comparação
-        linha_sem_bullet = re.sub(r"^●\s*", "", linha).strip()
-        linha_sem_bullet_lower = linha_sem_bullet.lower()
+        linha_limpa = re.sub(r"^[●•\-]\s*", "", linha).strip()
 
-        # Detecta nome da receita (primeira linha curta sem marcadores técnicos)
-        if nome is None and not any(p in linha_lower for p in ["ingrediente", "modo", "preparo", "●", "kg", " g ", "ml", "xícara", "colher", "litro"]):
-            if 3 < len(linha) < 60:
-                nome = linha_sem_bullet
+        # Detecta nome (primeira linha tipo "1. Sorvete" ou só o nome)
+        if nome is None:
+            m_nome = re.match(r"^\d+\.\s+(.+)$", linha_limpa)
+            if m_nome:
+                nome = m_nome.group(1).strip()
                 continue
+            elif not any(p in linha_lower for p in ["ingrediente", "modo", "preparo", "kg", " g ", "ml", "xícara", "colher", "litro", "●"]):
+                if 3 < len(linha_limpa) < 80:
+                    nome = linha_limpa
+                    continue
 
-        # Detecta início de seção Ingredientes
-        if re.search(r"●?\s*ingredientes?\s*:?$", linha_lower) or re.search(r"^ingredientes?\s*\(", linha_lower):
+        # Detecta seção Ingredientes (com variações: "Ingredientes (Mousse):", etc)
+        if re.search(r"ingredientes?", linha_lower):
+            fechar_secao()
             secao_atual = "ingredientes"
-            # captura sufixo inline ex: "Ingredientes (Mousse):"
-            sufixo = re.sub(r"●?\s*ingredientes?\s*", "", linha_sem_bullet, flags=re.I).strip(": ")
-            if sufixo:
-                ingredientes_linhas.append(f"— {sufixo} —")
+            titulo_secao = re.sub(r".*ingredientes?\s*", "", linha_limpa, flags=re.I).strip(":() ")
+            # Ingredientes inline (tudo na mesma linha após o :)
+            inline = re.sub(r".*ingredientes?[^:]*:\s*", "", linha, flags=re.I).strip()
+            if inline and len(inline) > 5:
+                for parte in inline.split(","):
+                    parte = parte.strip()
+                    if parte:
+                        buffer_linhas.append(parte)
             continue
 
-        # Detecta início de seção Modo de Preparo
-        if re.search(r"●?\s*modo\s*de\s*preparo\s*:?", linha_lower):
+        # Detecta seção Modo de Preparo
+        if re.search(r"modo\s*de\s*preparo", linha_lower):
+            fechar_secao()
             secao_atual = "modo"
+            titulo_secao = re.sub(r".*modo\s*de\s*preparo\s*", "", linha_limpa, flags=re.I).strip(":() ")
+            continue
+
+        # Ignora linhas de observação (Obs, Nota, Dica, Finalização)
+        if re.match(r"^(obs|nota|dica|finaliz)", linha_lower):
             continue
 
         # Acumula por seção
         if secao_atual == "ingredientes":
-            ingredientes_linhas.append(linha_sem_bullet)
+            # Remove numeração do item (1. 2. etc)
+            item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
+            if item:
+                buffer_linhas.append(item)
         elif secao_atual == "modo":
-            modo_linhas.append(linha_sem_bullet)
+            item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
+            if item:
+                buffer_linhas.append(item)
 
-    # Garante numeração no modo de preparo
-    modo_formatado = []
-    contador = 1
-    for linha in modo_linhas:
-        if linha and not re.match(r"^\d+\.", linha):
-            modo_formatado.append(f"{contador}. {linha}")
-            contador += 1
-        else:
-            modo_formatado.append(linha)
+    fechar_secao()
 
-    ingredientes = "\n".join(ingredientes_linhas) if ingredientes_linhas else None
-    modo = "\n".join(modo_formatado) if modo_formatado else None
+    # Monta ingredientes formatados
+    partes_ing = []
+    for titulo, linhas_ing in ingredientes_blocos:
+        if titulo:
+            partes_ing.append(f"({titulo})")
+        for i, l in enumerate(linhas_ing, 1):
+            partes_ing.append(f"{i}. {l}")
+    ingredientes = "\n".join(partes_ing) if partes_ing else None
+
+    # Monta modo formatado
+    partes_modo = []
+    for titulo, linhas_modo in modo_blocos:
+        if titulo:
+            partes_modo.append(f"({titulo})")
+        for i, l in enumerate(linhas_modo, 1):
+            partes_modo.append(f"{i}. {l}")
+    modo = "\n".join(partes_modo) if partes_modo else None
 
     return nome, ingredientes, modo
 
@@ -352,15 +415,23 @@ def api_chat():
     ultima_receita = session.get("ultima_receita", "")
 
     # Regra: cálculo de fermento
-    # Intercepta qualquer mensagem com "fermento" para não cair na busca do PDF
+    # DEVE vir antes de qualquer busca no PDF
     if "fermento" in mensagem.lower():
-        farinha = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
-        temp = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius)", mensagem, re.I)
-        if farinha and temp:
-            fermento = calcular_fermento(farinha.group(1), temp.group(1))
+        # Pega o primeiro número como farinha (kg) e o segundo como temperatura
+        numeros = re.findall(r"(\d+(?:[.,]\d+)?)", mensagem)
+        farinha_match = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem, re.I)
+        temp_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:°|graus?|celsius|grau)", mensagem, re.I)
+
+        # Fallback: se não achou com palavras, usa os dois primeiros números
+        farinha_val = farinha_match.group(1) if farinha_match else (numeros[0] if len(numeros) >= 1 else None)
+        temp_val = temp_match.group(1) if temp_match else (numeros[1] if len(numeros) >= 2 else None)
+
+        if farinha_val and temp_val:
+            fermento = calcular_fermento(farinha_val, temp_val)
             if fermento is not None:
-                return jsonify({"resposta": f"Para {farinha.group(1)} kg de farinha a {temp.group(1)}\u00b0C, use {fermento} g de fermento seco."}), 200
-            return jsonify({"resposta": "Valores inválidos."}), 200
+                return jsonify({"resposta": f"Para {farinha_val} kg de farinha a {temp_val}\u00b0C, use {fermento} g de fermento seco."}), 200
+            return jsonify({"resposta": "Valores inválidos. Verifique os números informados."}), 200
+
         # Faltam dados — orienta o usuário
         return jsonify({"resposta": "Para calcular o fermento, preciso de duas informações:\n\n1. Quantidade de farinha (em kg)\n2. Temperatura ambiente (em °C)\n\nDigite assim: \"calcular fermento para 2 kg com temperatura 28 graus\""}), 200
 
