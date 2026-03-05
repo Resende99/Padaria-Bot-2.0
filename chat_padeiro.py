@@ -151,43 +151,64 @@ carregar_pdfs_pasta()
 # ══════════════════════════════════════════
 # PDF — BUSCA
 # ══════════════════════════════════════════
+CATALOGO_RECEITAS = {
+    "Sorvete":                           ["sorvete"],
+    "Mousse de Cafe com Chocolate":      ["mousse", "cafe"],
+    "Bolo de Abacaxi com Doce de Leite": ["abacaxi", "doce de leite"],
+    "Bolo de Fuba":                      ["fuba"],
+    "Bolo Cacarola":                     ["cacarola"],
+    "Bolo de Chocolate":                 ["peteleco", "chocolate"],
+    "Bolo Pudim":                        ["pudim"],
+}
+
+# Nomes reais no PDF (com acentos)
+NOMES_PDF = {
+    "Sorvete":                           "Sorvete",
+    "Mousse de Cafe com Chocolate":      "Mousse de Café com Chocolate",
+    "Bolo de Abacaxi com Doce de Leite": "Bolo de Abacaxi com Doce de Leite",
+    "Bolo de Fuba":                      "Bolo de Fubá",
+    "Bolo Cacarola":                     "Bolo Caçarola",
+    "Bolo de Chocolate":                 "Bolo de Chocolate",
+    "Bolo Pudim":                        "Bolo Pudim",
+}
+
+
+def normalizar_str(s):
+    import unicodedata
+    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii").lower()
+
+
 def buscar_no_pdf(mensagem):
     if not pdf_content:
         return None
 
-    texto_lower = pdf_content.lower()
-    termos = re.findall(r"[a-zà-ú]{4,}", mensagem.lower())
-    stop = {"receita", "como", "fazer", "para", "quero", "preciso", "pode", "dias",
-            "quentes", "frios", "manda", "qual", "uma", "voce", "quais"}
-    termos = [t for t in termos if t not in stop]
+    msg_norm = normalizar_str(mensagem)
 
-    padrao_cabecalho = re.compile(
-        r"(?m)^\d+\.\s+[A-Za-záéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ][^\n]{2,}"
-    )
+    chave_encontrada = None
+    for chave, keywords in CATALOGO_RECEITAS.items():
+        if any(k in msg_norm for k in keywords):
+            chave_encontrada = chave
+            break
 
-    for t in termos[:8]:
-        pos = texto_lower.find(t)
-        if pos == -1:
+    if not chave_encontrada:
+        return None
+
+    nome_real = NOMES_PDF[chave_encontrada]
+    idx = pdf_content.find(nome_real)
+    if idx == -1:
+        return None
+
+    # Captura até o proximo nome de receita
+    fim = len(pdf_content)
+    for outro_nome in NOMES_PDF.values():
+        if outro_nome == nome_real:
             continue
+        pos = pdf_content.find(outro_nome, idx + len(nome_real))
+        if pos != -1 and pos < fim:
+            fim = pos
 
-        trecho_antes = pdf_content[max(0, pos - 800):pos]
-        m = None
-        for match in padrao_cabecalho.finditer(trecho_antes):
-            m = match
-        inicio = (max(0, pos - 800) + m.start()) if m else max(0, pos - 200)
+    return pdf_content[idx:fim].strip()
 
-        trecho_depois = pdf_content[pos:min(len(pdf_content), pos + 2000)]
-        proximo = padrao_cabecalho.search(trecho_depois[10:])
-        fim = (pos + 10 + proximo.start()) if proximo else min(len(pdf_content), pos + 2000)
-
-        return pdf_content[inicio:fim].strip()
-
-    return None
-
-
-# ══════════════════════════════════════════
-# PDF — EXTRAÇÃO E FORMATAÇÃO
-# ══════════════════════════════════════════
 def normalizar_texto_pdf(txt):
     txt = (txt or "").replace("\r", "")
     txt = re.sub(r"[ \t]{2,}", " ", txt)
@@ -195,88 +216,66 @@ def normalizar_texto_pdf(txt):
     return txt.strip()
 
 def extrair_receita_do_trecho(trecho):
-    t = normalizar_texto_pdf(trecho)
-    t = re.sub(r"\[PDF:[^\]]+\]", "", t).strip()
-    linhas = [l.strip() for l in t.splitlines() if l.strip()]
+    linhas = [l.strip() for l in trecho.splitlines() if l.strip()]
 
     nome = None
-    ingredientes_blocos = []
-    modo_blocos = []
-    secao_atual = None
-    titulo_secao = ""
-    buffer_linhas = []
-
-    def fechar_secao():
-        nonlocal buffer_linhas
-        if secao_atual == "ingredientes" and buffer_linhas:
-            ingredientes_blocos.append((titulo_secao, list(buffer_linhas)))
-        elif secao_atual == "modo" and buffer_linhas:
-            modo_blocos.append((titulo_secao, list(buffer_linhas)))
-        buffer_linhas = []
+    ingredientes_linhas = []
+    modo_linhas = []
+    secao = None
 
     for linha in linhas:
         linha_lower = linha.lower()
-        linha_limpa = re.sub(r"^[●•\-]\s*", "", linha).strip()
+        linha_limpa = linha.strip()
 
+        # Nome: primeira linha que nao seja secao
         if nome is None:
-            m_nome = re.match(r"^\d+\.\s+(.+)$", linha_limpa)
-            if m_nome:
-                nome = m_nome.group(1).strip()
+            if not any(p in linha_lower for p in ["ingrediente", "modo de preparo", "receitas para"]):
+                nome = linha_limpa
                 continue
-            elif not any(p in linha_lower for p in
-                         ["ingrediente", "modo", "preparo", "kg", " g ", "ml",
-                          "xícara", "colher", "litro", "●"]):
-                if 3 < len(linha_limpa) < 80:
-                    nome = linha_limpa
-                    continue
 
-        if re.search(r"ingredientes?", linha_lower):
-            fechar_secao()
-            secao_atual = "ingredientes"
-            titulo_secao = re.sub(r".*ingredientes?\s*", "", linha_limpa, flags=re.I).strip(":() ")
-            inline = re.sub(r".*ingredientes?[^:]*:\s*", "", linha, flags=re.I).strip()
-            if inline and len(inline) > 5:
-                for parte in inline.split(","):
-                    parte = parte.strip()
-                    if parte:
-                        buffer_linhas.append(parte)
+        # Detecta secao Ingredientes
+        if linha_lower.strip() == "ingredientes":
+            secao = "ingredientes"
             continue
 
-        if re.search(r"modo\s*de\s*preparo", linha_lower):
-            fechar_secao()
-            secao_atual = "modo"
-            titulo_secao = re.sub(r".*modo\s*de\s*preparo\s*", "", linha_limpa, flags=re.I).strip(":() ")
+        # Detecta secao Modo de Preparo
+        if "modo de preparo" in linha_lower:
+            secao = "modo"
             continue
 
-        if re.match(r"^(obs|nota|dica|finaliz)", linha_lower):
+        # Separadores de subsecao ([ Massa ], [ Cobertura ], etc)
+        if re.match(r"^\[.+\]$", linha_limpa):
+            if secao == "ingredientes":
+                label = linha_limpa.strip("[] ")
+                ingredientes_linhas.append("--- " + label + " ---")
             continue
 
-        if secao_atual == "ingredientes":
+        # Ignora obs/dica
+        if re.match(r"^(obs|dica|nota)", linha_lower):
+            continue
+
+        if secao == "ingredientes":
             item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
             if item:
-                buffer_linhas.append(item)
-        elif secao_atual == "modo":
+                ingredientes_linhas.append(item)
+        elif secao == "modo":
             item = re.sub(r"^\d+\.\s*", "", linha_limpa).strip()
             if item:
-                buffer_linhas.append(item)
+                modo_linhas.append(item)
 
-    fechar_secao()
+    ingredientes = None
+    if ingredientes_linhas:
+        partes = []
+        for l in ingredientes_linhas:
+            if l.startswith("---"):
+                partes.append("\n" + l)
+            else:
+                partes.append("  " + l)
+        ingredientes = "\n".join(partes).strip()
 
-    partes_ing = []
-    for titulo, linhas_ing in ingredientes_blocos:
-        if titulo:
-            partes_ing.append(f"({titulo})")
-        for i, l in enumerate(linhas_ing, 1):
-            partes_ing.append(f"{i}. {l}")
-    ingredientes = "\n".join(partes_ing) if partes_ing else None
-
-    partes_modo = []
-    for titulo, linhas_modo in modo_blocos:
-        if titulo:
-            partes_modo.append(f"({titulo})")
-        for i, l in enumerate(linhas_modo, 1):
-            partes_modo.append(f"{i}. {l}")
-    modo = "\n".join(partes_modo) if partes_modo else None
+    modo = None
+    if modo_linhas:
+        modo = "\n".join(str(i) + ". " + l for i, l in enumerate(modo_linhas, 1))
 
     return nome, ingredientes, modo
 
