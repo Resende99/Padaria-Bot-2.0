@@ -145,6 +145,90 @@ def buscar_no_pdf(mensagem: str):
     return None
 
 
+# ====== NOVO: FORMATAR RECEITA DO PDF (NOME + MODO, INGREDIENTES SÓ SE PEDIR) ======
+def normalizar_texto_pdf(txt: str) -> str:
+    txt = (txt or "").replace("\r", "")
+    txt = re.sub(r"[ \t]{2,}", " ", txt)
+    txt = re.sub(r"\n{3,}", "\n\n", txt)
+    return txt.strip()
+
+
+def extrair_receita_do_trecho(trecho: str):
+    """
+    Retorna (nome, ingredientes, modo).
+    Funciona melhor quando o trecho contém 'Ingredientes' e 'Modo de Preparo'.
+    """
+    t = normalizar_texto_pdf(trecho)
+
+    nome = None
+    ingredientes = None
+    modo = None
+
+    # Nome (linha antes de Ingredientes)
+    m_nome = re.search(r"(?im)^\s*(.+?)\s*\n\s*●?\s*Ingredientes\s*:?", t)
+    if m_nome:
+        nome = m_nome.group(1).strip()
+    else:
+        # fallback: primeira linha não vazia
+        linhas = [l.strip() for l in t.splitlines() if l.strip()]
+        if linhas:
+            nome = linhas[0][:80]
+
+    m_ing = re.search(r"(?is)Ingredientes\s*:?(.*?)(Modo\s*de\s*Preparo\s*:?)", t)
+    if m_ing:
+        ingredientes = m_ing.group(1).strip()
+
+    m_modo = re.search(r"(?is)Modo\s*de\s*Preparo\s*:?(.*)$", t)
+    if m_modo:
+        modo = m_modo.group(1).strip()
+
+    return nome, ingredientes, modo
+
+
+def formatar_receita(nome: str, ingredientes: str, modo: str, pedir_ingredientes: bool) -> str | None:
+    if not nome or not modo:
+        return None
+
+    if pedir_ingredientes and ingredientes:
+        return f"Receita: {nome}\n\nIngredientes:\n{ingredientes}\n\nModo de preparo:\n{modo}"
+
+    return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
+
+
+# ====== NOVO: AJUSTE PROPORCIONAL POR KG (ingredientes) ======
+def detectar_kg_pedido(mensagem: str):
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*kg", mensagem.lower())
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", "."))
+    except:
+        return None
+
+
+def multiplicar_ingredientes(ingredientes_texto: str, fator: float) -> str:
+    linhas = [l.strip() for l in (ingredientes_texto or "").splitlines() if l.strip()]
+    out = []
+
+    for linha in linhas:
+        m = re.match(r"^(\d+(?:[.,]\d+)?)\s*(.*)$", linha)
+        if m:
+            num = float(m.group(1).replace(",", "."))
+            resto = m.group(2)
+            novo = num * fator
+
+            if abs(novo - round(novo)) < 1e-9:
+                novo_str = str(int(round(novo)))
+            else:
+                novo_str = str(round(novo, 2)).replace(".", ",")
+
+            out.append(f"{novo_str} {resto}".strip())
+        else:
+            out.append(linha)
+
+    return "\n".join(out)
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -199,9 +283,19 @@ def api_chat():
             return jsonify({"resposta": "Valores inválidos."}), 200
         return jsonify({"resposta": "Informe farinha (kg) e temperatura (°C)."}), 200
 
-    # Ingredientes da última receita
-    if re.search(r"\bingrediente\b", mensagem.lower()):
+    # flags do pedido
+    pediu_ingredientes = bool(re.search(r"\bingrediente\b", mensagem.lower()))
+    kg_desejado = detectar_kg_pedido(mensagem)
+
+    # Ingredientes da última receita (pedido separado)
+    if pediu_ingredientes and not kg_desejado:
+        # Se já salvamos uma receita completa na sessão, entrega ingredientes dela
+        last_nome = session.get("ultima_receita_nome") or ultima_receita
+        last_ing = session.get("ultima_receita_ingredientes", "")
+        if last_ing:
+            return jsonify({"resposta": f"Receita: {last_nome}\n\nIngredientes:\n{last_ing}"}), 200
         if ultima_receita:
+            # fallback: pede para IA listar ingredientes
             mensagem = f"Liste apenas os ingredientes da receita: {ultima_receita}"
         else:
             return jsonify({"resposta": "Não sei de qual receita você está falando."}), 200
@@ -210,10 +304,31 @@ def api_chat():
     if chave_cache in cache:
         return jsonify({"resposta": cache[chave_cache]}), 200
 
-    # 1) tenta PDF primeiro
+    # 1) tenta PDF primeiro e FORMATA
     trecho = buscar_no_pdf(mensagem)
     if trecho:
-        resposta_pdf = f"Encontrei isso na base de receitas:\n\n{trecho}"
+        nome, ingredientes, modo = extrair_receita_do_trecho(trecho)
+
+        # salva última receita completa para pedidos posteriores (ingredientes / escala)
+        if nome:
+            session["ultima_receita_nome"] = nome
+        if ingredientes:
+            session["ultima_receita_ingredientes"] = ingredientes
+        if modo:
+            session["ultima_receita_modo"] = modo
+
+        # Se o usuário pediu X kg, ajusta ingredientes proporcionalmente (base assumida 1 kg)
+        if kg_desejado and ingredientes:
+            base = float(session.get("ultima_receita_base_kg", 1.0))
+            fator = kg_desejado / base
+            ingredientes = multiplicar_ingredientes(ingredientes, fator)
+            pediu_ingredientes = True  # ao ajustar kg, sempre manda ingredientes ajustados
+
+        resposta_pdf = formatar_receita(nome or "Receita do PDF", ingredientes or "", modo or trecho, pediu_ingredientes)
+        if not resposta_pdf:
+            # fallback se não conseguiu separar bem
+            resposta_pdf = f"Encontrei isso na base de receitas:\n\n{trecho}"
+
         cache[chave_cache] = resposta_pdf
         salvar_cache()
         return jsonify({"resposta": resposta_pdf}), 200
