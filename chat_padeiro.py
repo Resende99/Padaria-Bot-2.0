@@ -36,15 +36,6 @@ def salvar_cache():
 
 threading.Thread(target=lambda: [time.sleep(3600) or cache.update(carregar_cache()) for _ in iter(int,1)], daemon=True).start()
 
-# ══ CONTEXTO BASE ══
-contexto_base = (
-    "Você é um assistente de padaria e confeitaria. "
-    "SEMPRE responda em português brasileiro. "
-    "Responda apenas sobre receitas de pães, bolos, massas, salgados e confeitaria artesanal. "
-    "Regras: ao pedir receita envie só nome e modo de preparo. "
-    "Se pedirem ingredientes envie a lista completa. "
-    "Respostas objetivas e técnicas. Sem emojis.\n"
-)
 
 # ══ FILTRO DE TEMA ══
 TEMAS_PANIFICACAO = [
