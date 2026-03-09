@@ -1,6 +1,6 @@
 # chat_padeiro.py
 from flask import Flask, render_template, request, jsonify, session
-import os, json, time, threading, re, random, unicodedata
+import os, re, random, unicodedata
 
 try:
     from PyPDF2 import PdfReader
@@ -9,13 +9,12 @@ except ImportError:
     PDF_SUPPORT = False
 
 from services.ia_services import gerar_resposta, buscar_e_responder_web
+from db import cache_get, cache_set, carregar_catalogo as db_carregar_catalogo
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_key_trocar")
 
-CACHE_FILE   = "receitas_cache.json"
-PDF_FOLDER   = "pdfs_upload"
-RECEITAS_DB  = "receitas.json"
+PDF_FOLDER = "pdfs_upload"
 os.makedirs(PDF_FOLDER, exist_ok=True)
 
 pdf_content = ""
@@ -29,45 +28,9 @@ def norm(s):
 
 
 # ══════════════════════════════════════════
-# CACHE
+# CATÁLOGO DE RECEITAS  ←  carregado do banco
 # ══════════════════════════════════════════
-def carregar_cache():
-    try:
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
-
-cache = carregar_cache()
-
-def salvar_cache():
-    try:
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cache, f, ensure_ascii=False, indent=2)
-    except:
-        pass
-
-threading.Thread(
-    target=lambda: [time.sleep(3600) or cache.update(carregar_cache()) for _ in iter(int, 1)],
-    daemon=True
-).start()
-
-
-# ══════════════════════════════════════════
-# CATÁLOGO DE RECEITAS  ←  carregado do JSON
-# ══════════════════════════════════════════
-def carregar_catalogo():
-    try:
-        with open(RECEITAS_DB, "r", encoding="utf-8") as f:
-            db = json.load(f)
-        receitas_quentes = [k for k, v in db.items() if v["categoria"] == "quente"]
-        receitas_frias   = [k for k, v in db.items() if v["categoria"] == "frio"]
-        return db, receitas_quentes, receitas_frias
-    except Exception as e:
-        print(f"Erro ao carregar {RECEITAS_DB}: {e}")
-        return {}, [], []
-
-DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
+DB, RECEITAS_QUENTES, RECEITAS_FRIAS = db_carregar_catalogo()
 
 
 def buscar_chave_catalogo(mensagem):
@@ -396,8 +359,9 @@ def api_chat():
 
     # ── 5. CACHE ──────────────────────────────────────────────────────────────
     chave_cache = f"{mensagem}|{session.get('ultima_receita', '')}"
-    if chave_cache in cache:
-        return jsonify({"resposta": cache[chave_cache]}), 200
+    cached = cache_get(chave_cache)
+    if cached:
+        return jsonify({"resposta": cached}), 200
 
     # ── 6. BUSCA NO PDF ───────────────────────────────────────────────────────
     trecho = buscar_no_pdf(mensagem)
@@ -412,16 +376,14 @@ def api_chat():
         resp = formatar(nome or "Receita", ing or "", modo or trecho, quer_ing)
         if not resp:
             resp = f"Encontrei na base:\n\n{trecho[:1500]}"
-        cache[chave_cache] = resp
-        salvar_cache()
+        cache_set(chave_cache, resp)
         return jsonify({"resposta": resp}), 200
 
     # ── 7. BUSCA WEB (Groq compound-beta) ─────────────────────────────────────
     try:
         resp_web = buscar_e_responder_web(mensagem)
         if resp_web:
-            cache[chave_cache] = resp_web
-            salvar_cache()
+            cache_set(chave_cache, resp_web)
             return jsonify({"resposta": resp_web}), 200
     except Exception as e:
         print(f"Erro web: {e}")
@@ -429,8 +391,7 @@ def api_chat():
     # ── 8. FALLBACK IA (Groq llama3) ──────────────────────────────────────────
     historico_txt = "\n".join(historico)
     resp = gerar_resposta(f"Histórico:\n{historico_txt}\n\nUsuário: {mensagem}")
-    cache[chave_cache] = resp
-    salvar_cache()
+    cache_set(chave_cache, resp)
     return jsonify({"resposta": resp}), 200
 
 
