@@ -189,36 +189,40 @@ def extrair_receita(trecho):
     secao = None
 
     for linha in linhas:
-        ll = linha.lower()
+        ll = linha.lower().strip()
 
         if nome is None:
-            if not any(p in ll for p in ["ingrediente", "modo de preparo", "receitas para", "origem:"]):
-                nome = re.sub(r"Padaria\s+Artesanal\s+CRI", "", linha, flags=re.I).strip()
+            if ll not in ("ingredientes", "ingredientes:", "modo de preparo") and                not ll.startswith("origem:") and "receitas para" not in ll:
+                nome = linha.strip()
                 continue
 
         if ll.startswith("origem:"):
             continue
 
-        if ll.strip() in ("ingredientes", "ingredientes:"):
+        if ll in ("ingredientes", "ingredientes:"):
             secao = "ing"
             continue
 
-        if "modo de preparo" in ll:
+        if ll == "modo de preparo":
             secao = "modo"
             continue
 
-        if re.match(r"^\[.+\]$", linha):
-            if secao == "ing":
-                ingredientes_linhas.append("--- " + linha.strip("[] ") + " ---")
+        # No modo de preparo, junta linha que é continuação (não começa com número)
+        if secao == "modo" and modo_linhas and not re.match(r"^\d+\.", linha):
+            modo_linhas[-1] = modo_linhas[-1] + " " + linha.strip()
+            continue
+
+        # Subseção ex: "Massa:" ou "Calda:"
+        if re.match(r"^[A-Za-zÀ-ú ]+:$", linha) and secao == "ing":
+            ingredientes_linhas.append(f"--- {linha.rstrip(':')} ---")
             continue
 
         if re.match(r"^(obs|dica|nota)", ll):
             continue
 
-        # Remove bullet \x7f e numeração
-        item = re.sub(r"^\x7f\s*", "", linha)
+        # Remove bullet - e numeração de passos
+        item = re.sub(r"^-\s*", "", linha)
         item = re.sub(r"^\d+\.\s*", "", item).strip()
-        item = re.sub(r"Padaria\s+Artesanal\s+CRI", "", item, flags=re.I).strip()
 
         if not item:
             continue
@@ -348,11 +352,26 @@ def api_chat():
 
     # ── 2. DIAS QUENTES / FRIOS / MAIS ───────────────────────────────────────
     escolhida = None
-    if re.search(r"dias?.quentes?", msg_norm):
+
+    PADROES_QUENTE = [
+        r"dias?.quentes?", r"dia de calor", r"calor", r"faz calor",
+        r"dia quente", r"temperatura alta", r"verao",
+    ]
+    PADROES_FRIO = [
+        r"dias?.frios?", r"dia de frio", r"frio", r"faz frio",
+        r"dia frio", r"temperatura baixa", r"inverno", r"gelado",
+        r"tempo frio", r"dia gelado",
+    ]
+    PADROES_MAIS = [
+        r"\b(mais|outra|proxima|outro|proximo|diferente)\b",
+        r"me da (mais|outra)", r"quero (mais|outra)",
+    ]
+
+    if any(re.search(p, msg_norm) for p in PADROES_QUENTE):
         escolhida = sortear_receita("quentes")
-    elif re.search(r"dias?.frios?", msg_norm):
+    elif any(re.search(p, msg_norm) for p in PADROES_FRIO):
         escolhida = sortear_receita("frias")
-    elif re.search(r"\b(mais|outra|proxima)\b", msg_norm) and session.get("ultima_categoria"):
+    elif any(re.search(p, msg_norm) for p in PADROES_MAIS) and session.get("ultima_categoria"):
         escolhida = sortear_receita(session["ultima_categoria"])
 
     if escolhida:
