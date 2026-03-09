@@ -12,7 +12,7 @@ from services.ia_services import gerar_resposta, buscar_e_responder_web
 from db import cache_get, cache_set, carregar_catalogo as db_carregar_catalogo
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_key_trocar")
+app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 PDF_FOLDER = "pdfs_upload"
 os.makedirs(PDF_FOLDER, exist_ok=True)

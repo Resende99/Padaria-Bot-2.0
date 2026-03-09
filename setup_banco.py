@@ -6,7 +6,7 @@ import psycopg2
 import json
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://padaria_bot_db_user:nXTj96zwTYa9g8k8ANJd2MPWTK6WJlln@dpg-d6nl0b75r7bs73dgt0j0-a.oregon-postgres.render.com/padaria_bot_db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 conn = psycopg2.connect(DATABASE_URL)
 cur = conn.cursor()
