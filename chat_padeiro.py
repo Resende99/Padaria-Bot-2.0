@@ -209,7 +209,8 @@ def formatar(nome, ing, modo, quer_ing):
     nome = nome.strip("[]().,—– ")
     if not nome:
         return None
-    if quer_ing and ing:
+    # Sempre mostra ingredientes primeiro, depois modo de preparo
+    if ing:
         return f"Receita: {nome}\n\nIngredientes:\n{ing}\n\nModo de preparo:\n{modo}"
     return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
 
@@ -350,17 +351,22 @@ def api_chat():
     if not eh_panificacao(mensagem):
         return jsonify({"resposta": "Só falo sobre panificação e cálculo de fermento."}), 200
 
-    # ── 4. INGREDIENTES DA ÚLTIMA RECEITA ─────────────────────────────────────
-    quer_ing = bool(re.search(r"\bingrediente\b", msg_lower))
-    kg       = detectar_kg(mensagem)
+    # ── 4. INGREDIENTES / MODO DA ÚLTIMA RECEITA ────────────────────────────
+    quer_ing  = bool(re.search(r"\bingrediente\b", msg_lower))
+    quer_modo = bool(re.search(r"\b(modo|preparo|como fazer|como se faz)\b", msg_lower))
+    kg        = detectar_kg(mensagem)
+
+    if quer_modo and not kg:
+        ultima = buscar_ultima_receita(session_id)
+        if ultima and ultima.get("modo"):
+            return jsonify({"resposta": f"Receita: {ultima['nome']}\n\nModo de preparo:\n{ultima['modo']}"}), 200
+        return jsonify({"resposta": "Qual receita você quer o modo de preparo?"}), 200
 
     if quer_ing and not kg:
         ultima = buscar_ultima_receita(session_id)
         if ultima and ultima.get("ingredientes"):
-            # Já tem ingredientes salvos no banco
             return jsonify({"resposta": f"Receita: {ultima['nome']}\n\nIngredientes:\n{ultima['ingredientes']}"}), 200
         elif ultima and ultima.get("nome"):
-            # Tem o nome mas não os ingredientes — busca no PDF
             trecho = buscar_no_pdf(ultima["nome"])
             if trecho:
                 nome, ing, modo = extrair_receita(trecho)
