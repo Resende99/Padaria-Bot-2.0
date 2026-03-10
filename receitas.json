@@ -1,0 +1,192 @@
+{
+  "Sorvete Artesanal": {
+    "keywords": ["sorvete"],
+    "categoria": "quente",
+    "nome_pdf": "Sorvete Artesanal"
+  },
+  "Mousse de Cafe com Chocolate": {
+    "keywords": ["mousse", "cafe"],
+    "categoria": "quente",
+    "nome_pdf": "Mousse de Café com Chocolate"
+  },
+  "Mousse de Morango sem Leite Condensado": {
+    "keywords": ["morango"],
+    "categoria": "quente",
+    "nome_pdf": "Mousse de Morango sem Leite Condensado"
+  },
+  "Bombom de Prestigio": {
+    "keywords": ["prestigio"],
+    "categoria": "quente",
+    "nome_pdf": "Bombom de Prestígio"
+  },
+  "Bombom Surpresa com Pacoca": {
+    "keywords": ["pacoca", "surpresa"],
+    "categoria": "quente",
+    "nome_pdf": "Bombom Surpresa com Paçoca"
+  },
+  "Bicho de Pe": {
+    "keywords": ["bicho de pe"],
+    "categoria": "quente",
+    "nome_pdf": "Bicho de Pé (Docinho de Gelatina)"
+  },
+  "Pacoquinha de Leite Condensado": {
+    "keywords": ["pacoquinha", "amendoim"],
+    "categoria": "quente",
+    "nome_pdf": "Paçoquinha de Leite Condensado"
+  },
+  "Pizza de Chocolate Brigadeiro": {
+    "keywords": ["pizza"],
+    "categoria": "quente",
+    "nome_pdf": "Pizza de Chocolate Brigadeiro com Morangos"
+  },
+  "Petit Gateau de Bacuri": {
+    "keywords": ["petit", "gateau", "bacuri"],
+    "categoria": "quente",
+    "nome_pdf": "Petit Gateau de Bacuri"
+  },
+  "Sequilhos de Limao": {
+    "keywords": ["sequilho", "limao"],
+    "categoria": "quente",
+    "nome_pdf": "Sequilhos de Limão"
+  },
+  "Bolo de Abacaxi com Doce de Leite": {
+    "keywords": ["abacaxi", "doce de leite"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Abacaxi com Doce de Leite"
+  },
+  "Bolo de Cenoura com Pudim de Chocolate": {
+    "keywords": ["cenoura"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Cenoura com Pudim de Chocolate"
+  },
+  "Bolo de Couve": {
+    "keywords": ["couve"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Couve"
+  },
+  "Bolo de Fuba": {
+    "keywords": ["fuba"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Fubá"
+  },
+  "Bolo de Mandioca Cremoso": {
+    "keywords": ["mandioca"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Mandioca Cremoso"
+  },
+  "Bolo de Chocolate Peteleco": {
+    "keywords": ["peteleco", "chocolate"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Chocolate (Peteleco)"
+  },
+  "Bolo de Macaxeira Caramelizado": {
+    "keywords": ["macaxeira"],
+    "categoria": "frio",
+    "nome_pdf": "Bolo de Macaxeira Caramelizado"
+  },
+  "Pastel de Forno com Creme de Galinha": {
+    "keywords": ["pastel", "galinha", "guarana"],
+    "categoria": "frio",
+    "nome_pdf": "Pastel de Forno com Creme de Galinha"
+  },
+  "Pudim de Queijo": {
+    "keywords": ["pudim"],
+    "categoria": "frio",
+    "nome_pdf": "Pudim de Queijo"
+  },
+  "Navete Francesa": {
+    "keywords": ["navete"],
+    "categoria": "frio",
+    "nome_pdf": "Navete Francesa"
+  },
+  "Pao de Mel": {
+    "keywords": ["pao de mel"],
+    "categoria": "frio",
+    "nome_pdf": "Pão de Mel"
+  },
+  "Joelho ou Enroladinho de Presunto": {
+    "keywords": ["presunto", "joelho"],
+    "categoria": "frio",
+    "nome_pdf": "Joelho ou Enroladinho de Presunto e Queijo"
+  },
+  "Pao de Queijo Simples": {
+    "keywords": ["pao de queijo"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Queijo Simples"
+  },
+  "Pao de Sal": {
+    "keywords": ["pao de sal", "pao de leite"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Sal (Pão de Leite)"
+  },
+  "Pao Caseiro Recheado": {
+    "keywords": ["pao caseiro"],
+    "categoria": "basico",
+    "nome_pdf": "Pão Caseiro Recheado"
+  },
+  "Mini Focaccia": {
+    "keywords": ["focaccia"],
+    "categoria": "basico",
+    "nome_pdf": "Mini Focaccia"
+  },
+  "Enroladinho de Salsicha": {
+    "keywords": ["salsicha", "enroladinho"],
+    "categoria": "basico",
+    "nome_pdf": "Enroladinho de Salsicha"
+  },
+  "Cookies de Chocolate": {
+    "keywords": ["cookie"],
+    "categoria": "basico",
+    "nome_pdf": "Cookies de Chocolate"
+  },
+  "Baguete Recheada": {
+    "keywords": ["baguete"],
+    "categoria": "basico",
+    "nome_pdf": "Baguete Recheada"
+  },
+  "Bolinho de Queijo": {
+    "keywords": ["bolinho"],
+    "categoria": "basico",
+    "nome_pdf": "Bolinho de Queijo"
+  },
+  "Pao de Aveia": {
+    "keywords": ["aveia"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Aveia com Iogurte"
+  },
+  "Pao de Milho": {
+    "keywords": ["milho"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Milho"
+  },
+  "Pao de Cenoura": {
+    "keywords": ["pao de cenoura"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Cenoura"
+  },
+  "Pao de Abacate": {
+    "keywords": ["abacate"],
+    "categoria": "basico",
+    "nome_pdf": "Pão de Abacate"
+  },
+  "Torta de Escarola": {
+    "keywords": ["escarola", "torta"],
+    "categoria": "basico",
+    "nome_pdf": "Torta de Escarola"
+  },
+  "Pamonha de Forno": {
+    "keywords": ["pamonha"],
+    "categoria": "basico",
+    "nome_pdf": "Pamonha de Forno"
+  },
+  "Empadinha de Leite Condensado": {
+    "keywords": ["empadinha"],
+    "categoria": "basico",
+    "nome_pdf": "Empadinha de Leite Condensado"
+  },
+  "Eclair": {
+    "keywords": ["eclair", "carolina"],
+    "categoria": "basico",
+    "nome_pdf": "Éclair"
+  }
+}

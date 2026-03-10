@@ -1,5 +1,5 @@
 """
-Roda UMA VEZ para criar as tabelas e popular com as receitas do JSON.
+Roda UMA VEZ para criar as tabelas e popular com as receitas.
 Execute: python setup_banco.py
 """
 import psycopg2
@@ -7,6 +7,8 @@ import json
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL não configurada.")
 
 conn = psycopg2.connect(DATABASE_URL)
 cur = conn.cursor()
@@ -29,10 +31,30 @@ CREATE TABLE IF NOT EXISTS receitas (
 );
 """)
 
+cur.execute("""
+CREATE TABLE IF NOT EXISTS ultima_receita (
+    session_id TEXT PRIMARY KEY,
+    nome TEXT,
+    ingredientes TEXT,
+    modo TEXT,
+    atualizado_em TIMESTAMP DEFAULT NOW()
+);
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS historico (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    mensagem TEXT NOT NULL,
+    resposta TEXT NOT NULL,
+    criado_em TIMESTAMP DEFAULT NOW()
+);
+""")
+
 conn.commit()
 print("Tabelas criadas.")
 
-# ── Popula receitas do JSON ───────────────────────────
+# ── Popula receitas ───────────────────────────────────
 with open("receitas.json", "r", encoding="utf-8") as f:
     db = json.load(f)
 

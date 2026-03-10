@@ -1,6 +1,6 @@
 # chat_padeiro.py
+import os, re, random, unicodedata, logging
 from flask import Flask, render_template, request, jsonify, session
-import os, re, random, unicodedata
 
 try:
     from PyPDF2 import PdfReader
@@ -9,14 +9,25 @@ except ImportError:
     PDF_SUPPORT = False
 
 from services.ia_services import gerar_resposta, buscar_e_responder_web
-from db import cache_get, cache_set, carregar_catalogo as db_carregar_catalogo
+from db import (
+    cache_get, cache_set,
+    carregar_catalogo as db_carregar_catalogo,
+    salvar_ultima_receita, buscar_ultima_receita,
+    salvar_historico,
+)
+
+# ── Logging ───────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 
 PDF_FOLDER = "pdfs_upload"
 os.makedirs(PDF_FOLDER, exist_ok=True)
-
 pdf_content = ""
 
 
@@ -28,13 +39,12 @@ def norm(s):
 
 
 # ══════════════════════════════════════════
-# CATÁLOGO DE RECEITAS  ←  carregado do banco
+# CATÁLOGO DE RECEITAS
 # ══════════════════════════════════════════
 DB, RECEITAS_QUENTES, RECEITAS_FRIAS = db_carregar_catalogo()
 
 
 def buscar_chave_catalogo(mensagem):
-    """Retorna a chave do DB que combina com a mensagem, ou None."""
     m = norm(mensagem)
     for chave, info in DB.items():
         if any(norm(kw) in m for kw in info["keywords"]):
@@ -45,11 +55,11 @@ def buscar_chave_catalogo(mensagem):
 # ══════════════════════════════════════════
 # FILTRO DE TEMA
 # ══════════════════════════════════════════
-# Palavras que liberam a resposta — geradas dinamicamente a partir do DB + fixas
 _PALAVRAS_FIXAS = [
     "receita", "fazer", "preparar", "ingrediente", "modo", "preparo",
     "massa", "forno", "assar", "temperatura", "grau", "kg",
     "mais", "outra", "proxima", "dias", "quente", "frio",
+    "obrigado", "obrigada", "valeu", "otimo", "gostei", "perfeito",
 ]
 
 def _palavras_panificacao():
@@ -60,7 +70,7 @@ def _palavras_panificacao():
     return palavras
 
 PALAVRAS_PANIFICACAO = _palavras_panificacao()
-CONTEXTO_CURTO = {"sim", "nao", "ok", "legal", "certo", "entendi", "obrigado", "obrigada"}
+CONTEXTO_CURTO = {"sim", "nao", "ok", "legal", "certo", "entendi", "obrigado", "obrigada", "valeu", "otimo", "show"}
 
 def eh_panificacao(mensagem):
     m = norm(mensagem).strip()
@@ -95,7 +105,8 @@ def extrair_texto_pdf(caminho):
             for p in PdfReader(f).pages:
                 texto += (p.extract_text() or "") + "\n\n"
         return texto.strip()
-    except:
+    except Exception as e:
+        logger.error(f"Erro ao ler PDF {caminho}: {e}")
         return ""
 
 def carregar_pdfs_pasta():
@@ -108,7 +119,7 @@ def carregar_pdfs_pasta():
             t = extrair_texto_pdf(os.path.join(PDF_FOLDER, arq))
             if t:
                 pdf_content += f"\n\n[PDF: {arq}]\n{t}"
-                print(f"PDF carregado: {arq}")
+                logger.info(f"PDF carregado: {arq}")
 
 carregar_pdfs_pasta()
 
@@ -138,7 +149,6 @@ def buscar_no_pdf(mensagem):
 
 
 def extrair_receita(trecho):
-    # Junta linhas quebradas (continuação começa com espaço)
     linhas_raw = trecho.splitlines()
     linhas = []
     for l in linhas_raw:
@@ -155,41 +165,32 @@ def extrair_receita(trecho):
         ll = linha.lower().strip()
 
         if nome is None:
-            if ll not in ("ingredientes", "ingredientes:", "modo de preparo") and                not ll.startswith("origem:") and "receitas para" not in ll:
+            if ll not in ("ingredientes", "ingredientes:", "modo de preparo") and \
+               not ll.startswith("origem:") and "receitas para" not in ll:
                 nome = linha.strip()
                 continue
 
         if ll.startswith("origem:"):
             continue
-
         if ll in ("ingredientes", "ingredientes:"):
             secao = "ing"
             continue
-
         if ll == "modo de preparo":
             secao = "modo"
             continue
-
-        # No modo de preparo, junta linha que é continuação (não começa com número)
         if secao == "modo" and modo_linhas and not re.match(r"^\d+\.", linha):
             modo_linhas[-1] = modo_linhas[-1] + " " + linha.strip()
             continue
-
-        # Subseção ex: "Massa:" ou "Calda:"
         if re.match(r"^[A-Za-zÀ-ú ]+:$", linha) and secao == "ing":
             ingredientes_linhas.append(f"--- {linha.rstrip(':')} ---")
             continue
-
         if re.match(r"^(obs|dica|nota)", ll):
             continue
 
-        # Remove bullet - e numeração de passos
         item = re.sub(r"^-\s*", "", linha)
         item = re.sub(r"^\d+\.\s*", "", item).strip()
-
         if not item:
             continue
-
         if secao == "ing":
             ingredientes_linhas.append(item)
         elif secao == "modo":
@@ -280,8 +281,10 @@ def api_chat():
     if not mensagem:
         return jsonify({"resposta": "Digite algo."}), 200
 
-    msg_lower = mensagem.lower()
-    msg_norm  = norm(mensagem)
+    msg_lower  = mensagem.lower()
+    msg_norm   = norm(mensagem)
+    session_id = session.get("session_id") or os.urandom(16).hex()
+    session["session_id"] = session_id
 
     historico = session.get("historico", [])
     historico.append(mensagem)
@@ -321,7 +324,7 @@ def api_chat():
         r"dia quente", r"temperatura alta", r"verao",
     ]
     PADROES_FRIO = [
-        r"dias?.frios?", r"dia de frio", r"frio", r"faz frio",
+        r"dias?.frios?", r"dia de frio", r"faz frio",
         r"dia frio", r"temperatura baixa", r"inverno", r"gelado",
         r"tempo frio", r"dia gelado",
     ]
@@ -338,8 +341,8 @@ def api_chat():
         escolhida = sortear_receita(session["ultima_categoria"])
 
     if escolhida:
-        kw       = DB[escolhida]["keywords"][0]
-        mensagem = f"receita de {kw}"
+        kw        = DB[escolhida]["keywords"][0]
+        mensagem  = f"receita de {kw}"
         msg_lower = mensagem.lower()
         msg_norm  = norm(mensagem)
 
@@ -352,13 +355,13 @@ def api_chat():
     kg       = detectar_kg(mensagem)
 
     if quer_ing and not kg:
-        last_nome = session.get("ultima_receita_nome", "")
-        last_ing  = session.get("ultima_receita_ingredientes", "")
-        if last_ing:
-            return jsonify({"resposta": f"Receita: {last_nome}\n\nIngredientes:\n{last_ing}"}), 200
+        # Busca última receita no banco
+        ultima = buscar_ultima_receita(session_id)
+        if ultima and ultima.get("ingredientes"):
+            return jsonify({"resposta": f"Receita: {ultima['nome']}\n\nIngredientes:\n{ultima['ingredientes']}"}), 200
 
     # ── 5. CACHE ──────────────────────────────────────────────────────────────
-    chave_cache = f"{mensagem}|{session.get('ultima_receita', '')}"
+    chave_cache = f"{mensagem}|{session_id}"
     cached = cache_get(chave_cache)
     if cached:
         return jsonify({"resposta": cached}), 200
@@ -367,16 +370,21 @@ def api_chat():
     trecho = buscar_no_pdf(mensagem)
     if trecho:
         nome, ing, modo = extrair_receita(trecho)
-        if nome: session["ultima_receita_nome"] = nome
-        if ing:  session["ultima_receita_ingredientes"] = ing
-        if modo: session["ultima_receita_modo"] = modo
+
+        # Salva última receita no banco
+        if nome:
+            salvar_ultima_receita(session_id, nome or "", ing or "", modo or "")
+
         if kg and ing:
-            ing     = escalar_ingredientes(ing, kg)
+            ing      = escalar_ingredientes(ing, kg)
             quer_ing = True
+
         resp = formatar(nome or "Receita", ing or "", modo or trecho, quer_ing)
         if not resp:
             resp = f"Encontrei na base:\n\n{trecho[:1500]}"
+
         cache_set(chave_cache, resp)
+        salvar_historico(session_id, mensagem, resp)
         return jsonify({"resposta": resp}), 200
 
     # ── 7. BUSCA WEB (Groq compound-beta) ─────────────────────────────────────
@@ -384,16 +392,18 @@ def api_chat():
         resp_web = buscar_e_responder_web(mensagem)
         if resp_web:
             cache_set(chave_cache, resp_web)
+            salvar_historico(session_id, mensagem, resp_web)
             return jsonify({"resposta": resp_web}), 200
     except Exception as e:
-        print(f"Erro web: {e}")
+        logger.error(f"Erro busca web: {e}")
 
     # ── 8. FALLBACK IA (Groq llama3) ──────────────────────────────────────────
     historico_txt = "\n".join(historico)
     resp = gerar_resposta(f"Histórico:\n{historico_txt}\n\nUsuário: {mensagem}")
     cache_set(chave_cache, resp)
+    salvar_historico(session_id, mensagem, resp)
     return jsonify({"resposta": resp}), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
