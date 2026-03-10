@@ -355,10 +355,19 @@ def api_chat():
     kg       = detectar_kg(mensagem)
 
     if quer_ing and not kg:
-        # Busca última receita no banco
         ultima = buscar_ultima_receita(session_id)
         if ultima and ultima.get("ingredientes"):
+            # Já tem ingredientes salvos no banco
             return jsonify({"resposta": f"Receita: {ultima['nome']}\n\nIngredientes:\n{ultima['ingredientes']}"}), 200
+        elif ultima and ultima.get("nome"):
+            # Tem o nome mas não os ingredientes — busca no PDF
+            trecho = buscar_no_pdf(ultima["nome"])
+            if trecho:
+                nome, ing, modo = extrair_receita(trecho)
+                if ing:
+                    salvar_ultima_receita(session_id, nome or ultima["nome"], ing, modo or "")
+                    return jsonify({"resposta": f"Receita: {nome}\n\nIngredientes:\n{ing}"}), 200
+        return jsonify({"resposta": "Qual receita você quer os ingredientes?"}), 200
 
     # ── 5. CACHE ──────────────────────────────────────────────────────────────
     chave_cache = f"{mensagem}|{session_id}"
@@ -371,9 +380,8 @@ def api_chat():
     if trecho:
         nome, ing, modo = extrair_receita(trecho)
 
-        # Salva última receita no banco
         if nome:
-            salvar_ultima_receita(session_id, nome or "", ing or "", modo or "")
+            salvar_ultima_receita(session_id, nome, ing or "", modo or "")
 
         if kg and ing:
             ing      = escalar_ingredientes(ing, kg)
