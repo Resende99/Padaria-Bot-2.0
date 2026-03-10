@@ -7,7 +7,7 @@
   "Mousse de Cafe com Chocolate": {
     "keywords": ["mousse", "cafe"],
     "categoria": "quente",
-    "nome_pdf": "Mousse de Café com Chocolate"
+    "nome_pdf": "Mousse de Cafe com Chocolate"
   },
   "Mousse de Morango sem Leite Condensado": {
     "keywords": ["morango"],
@@ -17,22 +17,22 @@
   "Bombom de Prestigio": {
     "keywords": ["prestigio"],
     "categoria": "quente",
-    "nome_pdf": "Bombom de Prestígio"
+    "nome_pdf": "Bombom de Prestigio"
   },
   "Bombom Surpresa com Pacoca": {
     "keywords": ["pacoca", "surpresa"],
     "categoria": "quente",
-    "nome_pdf": "Bombom Surpresa com Paçoca"
+    "nome_pdf": "Bombom Surpresa com Pacoca"
   },
   "Bicho de Pe": {
     "keywords": ["bicho de pe"],
     "categoria": "quente",
-    "nome_pdf": "Bicho de Pé (Docinho de Gelatina)"
+    "nome_pdf": "Bicho de Pe (Docinho de Gelatina)"
   },
   "Pacoquinha de Leite Condensado": {
     "keywords": ["pacoquinha", "amendoim"],
     "categoria": "quente",
-    "nome_pdf": "Paçoquinha de Leite Condensado"
+    "nome_pdf": "Pacoquinha de Leite Condensado"
   },
   "Pizza de Chocolate Brigadeiro": {
     "keywords": ["pizza"],
@@ -47,7 +47,7 @@
   "Sequilhos de Limao": {
     "keywords": ["sequilho", "limao"],
     "categoria": "quente",
-    "nome_pdf": "Sequilhos de Limão"
+    "nome_pdf": "Sequilhos de Limao"
   },
   "Bolo de Abacaxi com Doce de Leite": {
     "keywords": ["abacaxi", "doce de leite"],
@@ -67,7 +67,7 @@
   "Bolo de Fuba": {
     "keywords": ["fuba"],
     "categoria": "frio",
-    "nome_pdf": "Bolo de Fubá"
+    "nome_pdf": "Bolo de Fuba"
   },
   "Bolo de Mandioca Cremoso": {
     "keywords": ["mandioca"],
@@ -102,7 +102,7 @@
   "Pao de Mel": {
     "keywords": ["pao de mel"],
     "categoria": "frio",
-    "nome_pdf": "Pão de Mel"
+    "nome_pdf": "Pao de Mel"
   },
   "Joelho ou Enroladinho de Presunto": {
     "keywords": ["presunto", "joelho"],
@@ -112,17 +112,17 @@
   "Pao de Queijo Simples": {
     "keywords": ["pao de queijo"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Queijo Simples"
+    "nome_pdf": "Pao de Queijo Simples"
   },
   "Pao de Sal": {
     "keywords": ["pao de sal", "pao de leite"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Sal (Pão de Leite)"
+    "nome_pdf": "Pao de Sal (Pao de Leite)"
   },
   "Pao Caseiro Recheado": {
     "keywords": ["pao caseiro"],
     "categoria": "basico",
-    "nome_pdf": "Pão Caseiro Recheado"
+    "nome_pdf": "Pao Caseiro Recheado"
   },
   "Mini Focaccia": {
     "keywords": ["focaccia"],
@@ -152,22 +152,22 @@
   "Pao de Aveia": {
     "keywords": ["aveia"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Aveia com Iogurte"
+    "nome_pdf": "Pao de Aveia com Iogurte"
   },
   "Pao de Milho": {
     "keywords": ["milho"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Milho"
+    "nome_pdf": "Pao de Milho"
   },
   "Pao de Cenoura": {
     "keywords": ["pao de cenoura"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Cenoura"
+    "nome_pdf": "Pao de Cenoura"
   },
   "Pao de Abacate": {
     "keywords": ["abacate"],
     "categoria": "basico",
-    "nome_pdf": "Pão de Abacate"
+    "nome_pdf": "Pao de Abacate"
   },
   "Torta de Escarola": {
     "keywords": ["escarola", "torta"],
@@ -187,6 +187,6 @@
   "Eclair": {
     "keywords": ["eclair", "carolina"],
     "categoria": "basico",
-    "nome_pdf": "Éclair"
+    "nome_pdf": "Eclair"
   }
 }
