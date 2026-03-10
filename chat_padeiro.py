@@ -1,19 +1,15 @@
 # chat_padeiro.py
 import os, re, random, unicodedata, logging
-from flask import Flask, render_template, request, jsonify, session
-
-try:
-    from PyPDF2 import PdfReader
-    PDF_SUPPORT = True
-except ImportError:
-    PDF_SUPPORT = False
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 
 from services.ia_services import gerar_resposta, buscar_e_responder_web
 from db import (
     cache_get, cache_set,
-    carregar_catalogo as db_carregar_catalogo,
+    carregar_catalogo,
     salvar_ultima_receita, buscar_ultima_receita,
     salvar_historico,
+    listar_receitas, buscar_receita_por_id,
+    salvar_receita, deletar_receita,
 )
 
 # ── Logging ───────────────────────────────────────────
@@ -25,10 +21,18 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "padaria123")
 
-PDF_FOLDER = "pdfs_upload"
-os.makedirs(PDF_FOLDER, exist_ok=True)
-pdf_content = ""
+
+# ══════════════════════════════════════════
+# CATÁLOGO
+# ══════════════════════════════════════════
+DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
+
+
+def recarregar_catalogo():
+    global DB, RECEITAS_QUENTES, RECEITAS_FRIAS
+    DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
 
 
 # ══════════════════════════════════════════
@@ -36,12 +40,6 @@ pdf_content = ""
 # ══════════════════════════════════════════
 def norm(s):
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii").lower()
-
-
-# ══════════════════════════════════════════
-# CATÁLOGO DE RECEITAS
-# ══════════════════════════════════════════
-DB, RECEITAS_QUENTES, RECEITAS_FRIAS = db_carregar_catalogo()
 
 
 def buscar_chave_catalogo(mensagem):
@@ -94,128 +92,6 @@ def calcular_fermento(fv, tv):
 
 
 # ══════════════════════════════════════════
-# PDF — LEITURA
-# ══════════════════════════════════════════
-def extrair_texto_pdf(caminho):
-    if not PDF_SUPPORT:
-        return ""
-    try:
-        texto = ""
-        with open(caminho, "rb") as f:
-            for p in PdfReader(f).pages:
-                texto += (p.extract_text() or "") + "\n\n"
-        return texto.strip()
-    except Exception as e:
-        logger.error(f"Erro ao ler PDF {caminho}: {e}")
-        return ""
-
-def carregar_pdfs_pasta():
-    global pdf_content
-    pdf_content = ""
-    if not os.path.exists(PDF_FOLDER):
-        return
-    for arq in os.listdir(PDF_FOLDER):
-        if arq.lower().endswith(".pdf"):
-            t = extrair_texto_pdf(os.path.join(PDF_FOLDER, arq))
-            if t:
-                pdf_content += f"\n\n[PDF: {arq}]\n{t}"
-                logger.info(f"PDF carregado: {arq}")
-
-carregar_pdfs_pasta()
-
-
-# ══════════════════════════════════════════
-# PDF — BUSCA E EXTRAÇÃO
-# ══════════════════════════════════════════
-def buscar_no_pdf(mensagem):
-    if not pdf_content:
-        return None
-    chave = buscar_chave_catalogo(mensagem)
-    if not chave:
-        return None
-    nome_real = DB[chave]["nome_pdf"]
-    idx = pdf_content.find(nome_real)
-    if idx == -1:
-        return None
-    fim = len(pdf_content)
-    for info in DB.values():
-        outro = info["nome_pdf"]
-        if outro == nome_real:
-            continue
-        pos = pdf_content.find(outro, idx + len(nome_real))
-        if 0 < pos < fim:
-            fim = pos
-    return pdf_content[idx:fim].strip()
-
-
-def extrair_receita(trecho):
-    linhas_raw = trecho.splitlines()
-    linhas = []
-    for l in linhas_raw:
-        if l.startswith(" ") and linhas:
-            linhas[-1] = linhas[-1].rstrip() + " " + l.strip()
-        else:
-            linhas.append(l)
-    linhas = [l.strip() for l in linhas if l.strip()]
-
-    nome, ingredientes_linhas, modo_linhas = None, [], []
-    secao = None
-
-    for linha in linhas:
-        ll = linha.lower().strip()
-
-        if nome is None:
-            if ll not in ("ingredientes", "ingredientes:", "modo de preparo") and \
-               not ll.startswith("origem:") and "receitas para" not in ll:
-                nome = linha.strip()
-                continue
-
-        if ll.startswith("origem:"):
-            continue
-        if ll in ("ingredientes", "ingredientes:"):
-            secao = "ing"
-            continue
-        if ll == "modo de preparo":
-            secao = "modo"
-            continue
-        if secao == "modo" and modo_linhas and not re.match(r"^\d+\.", linha):
-            modo_linhas[-1] = modo_linhas[-1] + " " + linha.strip()
-            continue
-        if re.match(r"^[A-Za-zÀ-ú ]+:$", linha) and secao == "ing":
-            ingredientes_linhas.append(f"--- {linha.rstrip(':')} ---")
-            continue
-        if re.match(r"^(obs|dica|nota)", ll):
-            continue
-
-        item = re.sub(r"^-\s*", "", linha)
-        item = re.sub(r"^\d+\.\s*", "", item).strip()
-        if not item:
-            continue
-        if secao == "ing":
-            ingredientes_linhas.append(item)
-        elif secao == "modo":
-            modo_linhas.append(item)
-
-    ing  = "\n".join(("  " + l if not l.startswith("---") else "\n" + l) for l in ingredientes_linhas).strip() or None
-    modo = "\n".join(f"{i}. {l}" for i, l in enumerate(modo_linhas, 1)) or None
-    return nome, ing, modo
-
-
-def formatar(nome, ing, modo, quer_ing):
-    if not nome or not modo:
-        return None
-    for pat in [r"\[PDF:[^\]]+\]", r"Receitas?\s+para\s+Dias?\s+\w+", r"Padaria\s+Artesanal\s+CRI", r"Origem:.*"]:
-        nome = re.sub(pat, "", nome, flags=re.I).strip()
-    nome = nome.strip("[]().,—– ")
-    if not nome:
-        return None
-    # Sempre mostra ingredientes primeiro, depois modo de preparo
-    if ing:
-        return f"Receita: {nome}\n\nIngredientes:\n{ing}\n\nModo de preparo:\n{modo}"
-    return f"Receita: {nome}\n\nModo de preparo:\n{modo}"
-
-
-# ══════════════════════════════════════════
 # ESCALA POR KG
 # ══════════════════════════════════════════
 def detectar_kg(msg):
@@ -236,7 +112,7 @@ def escalar_ingredientes(texto, fator):
 
 
 # ══════════════════════════════════════════
-# HELPER — SORTEIA RECEITA DA CATEGORIA
+# SORTEIA RECEITA DA CATEGORIA
 # ══════════════════════════════════════════
 def sortear_receita(cat):
     lista    = RECEITAS_QUENTES if cat == "quentes" else RECEITAS_FRIAS
@@ -252,7 +128,7 @@ def sortear_receita(cat):
 
 
 # ══════════════════════════════════════════
-# ROTAS
+# ROTAS — CHAT
 # ══════════════════════════════════════════
 @app.route("/")
 def index():
@@ -261,18 +137,6 @@ def index():
 @app.route("/api/v1/health")
 def health():
     return jsonify({"status": "ok"}), 200
-
-@app.route("/upload_pdf", methods=["POST"])
-def upload_pdf():
-    global pdf_content
-    if "pdf" not in request.files:
-        return jsonify({"erro": "Nenhum arquivo"}), 400
-    f = request.files["pdf"]
-    if not f.filename.lower().endswith(".pdf"):
-        return jsonify({"erro": "Apenas PDFs"}), 400
-    f.save(os.path.join(PDF_FOLDER, f.filename))
-    carregar_pdfs_pasta()
-    return jsonify({"status": "ok", "mensagem": f"PDF '{f.filename}' carregado!"}), 200
 
 
 @app.route("/api/v1/chat", methods=["POST"])
@@ -351,7 +215,7 @@ def api_chat():
     if not eh_panificacao(mensagem):
         return jsonify({"resposta": "Só falo sobre panificação e cálculo de fermento."}), 200
 
-    # ── 4. INGREDIENTES / MODO DA ÚLTIMA RECEITA ────────────────────────────
+    # ── 4. INGREDIENTES / MODO DA ÚLTIMA RECEITA ─────────────────────────────
     quer_ing  = bool(re.search(r"\bingrediente\b", msg_lower))
     quer_modo = bool(re.search(r"\b(modo|preparo|como fazer|como se faz)\b", msg_lower))
     kg        = detectar_kg(mensagem)
@@ -366,13 +230,6 @@ def api_chat():
         ultima = buscar_ultima_receita(session_id)
         if ultima and ultima.get("ingredientes"):
             return jsonify({"resposta": f"Receita: {ultima['nome']}\n\nIngredientes:\n{ultima['ingredientes']}"}), 200
-        elif ultima and ultima.get("nome"):
-            trecho = buscar_no_pdf(ultima["nome"])
-            if trecho:
-                nome, ing, modo = extrair_receita(trecho)
-                if ing:
-                    salvar_ultima_receita(session_id, nome or ultima["nome"], ing, modo or "")
-                    return jsonify({"resposta": f"Receita: {nome}\n\nIngredientes:\n{ing}"}), 200
         return jsonify({"resposta": "Qual receita você quer os ingredientes?"}), 200
 
     # ── 5. CACHE ──────────────────────────────────────────────────────────────
@@ -381,22 +238,20 @@ def api_chat():
     if cached:
         return jsonify({"resposta": cached}), 200
 
-    # ── 6. BUSCA NO PDF ───────────────────────────────────────────────────────
-    trecho = buscar_no_pdf(mensagem)
-    if trecho:
-        nome, ing, modo = extrair_receita(trecho)
+    # ── 6. BUSCA NO BANCO ─────────────────────────────────────────────────────
+    chave = buscar_chave_catalogo(mensagem)
+    if chave and chave in DB:
+        info = DB[chave]
+        ing  = info.get("ingredientes", "")
+        modo = info.get("modo", "")
+        nome = chave
 
-        if nome:
-            salvar_ultima_receita(session_id, nome, ing or "", modo or "")
+        salvar_ultima_receita(session_id, nome, ing, modo)
 
         if kg and ing:
-            ing      = escalar_ingredientes(ing, kg)
-            quer_ing = True
+            ing  = escalar_ingredientes(ing, kg)
 
-        resp = formatar(nome or "Receita", ing or "", modo or trecho, quer_ing)
-        if not resp:
-            resp = f"Encontrei na base:\n\n{trecho[:1500]}"
-
+        resp = f"Receita: {nome}\n\nIngredientes:\n{ing}\n\nModo de preparo:\n{modo}"
         cache_set(chave_cache, resp)
         salvar_historico(session_id, mensagem, resp)
         return jsonify({"resposta": resp}), 200
@@ -411,12 +266,100 @@ def api_chat():
     except Exception as e:
         logger.error(f"Erro busca web: {e}")
 
-    # ── 8. FALLBACK IA (Groq llama3) ──────────────────────────────────────────
+    # ── 8. FALLBACK IA ────────────────────────────────────────────────────────
     historico_txt = "\n".join(historico)
     resp = gerar_resposta(f"Histórico:\n{historico_txt}\n\nUsuário: {mensagem}")
     cache_set(chave_cache, resp)
     salvar_historico(session_id, mensagem, resp)
     return jsonify({"resposta": resp}), 200
+
+
+# ══════════════════════════════════════════
+# ROTAS — ADMIN
+# ══════════════════════════════════════════
+def admin_logado():
+    return session.get("admin_logado") is True
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    erro = None
+    if request.method == "POST":
+        senha = request.form.get("senha", "")
+        if senha == ADMIN_PASSWORD:
+            session["admin_logado"] = True
+            return redirect(url_for("admin_index"))
+        erro = "Senha incorreta."
+    return render_template("admin_login.html", erro=erro)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_logado", None)
+    return redirect(url_for("admin_login"))
+
+
+@app.route("/admin")
+def admin_index():
+    if not admin_logado():
+        return redirect(url_for("admin_login"))
+    receitas = listar_receitas()
+    return render_template("admin.html", receitas=receitas)
+
+
+@app.route("/admin/nova", methods=["GET", "POST"])
+def admin_nova():
+    if not admin_logado():
+        return redirect(url_for("admin_login"))
+    erro = None
+    if request.method == "POST":
+        nome        = request.form.get("nome", "").strip()
+        keywords    = request.form.get("keywords", "").strip()
+        categoria   = request.form.get("categoria", "").strip()
+        ingredientes = request.form.get("ingredientes", "").strip()
+        modo        = request.form.get("modo", "").strip()
+        if not all([nome, keywords, categoria, ingredientes, modo]):
+            erro = "Preencha todos os campos."
+        else:
+            if salvar_receita(nome, keywords, categoria, ingredientes, modo):
+                recarregar_catalogo()
+                return redirect(url_for("admin_index"))
+            erro = "Erro ao salvar receita."
+    return render_template("admin_form.html", receita=None, erro=erro)
+
+
+@app.route("/admin/editar/<int:receita_id>", methods=["GET", "POST"])
+def admin_editar(receita_id):
+    if not admin_logado():
+        return redirect(url_for("admin_login"))
+    receita = buscar_receita_por_id(receita_id)
+    if not receita:
+        return redirect(url_for("admin_index"))
+    erro = None
+    if request.method == "POST":
+        nome         = request.form.get("nome", "").strip()
+        keywords     = request.form.get("keywords", "").strip()
+        categoria    = request.form.get("categoria", "").strip()
+        ingredientes = request.form.get("ingredientes", "").strip()
+        modo         = request.form.get("modo", "").strip()
+        if not all([nome, keywords, categoria, ingredientes, modo]):
+            erro = "Preencha todos os campos."
+        else:
+            if salvar_receita(nome, keywords, categoria, ingredientes, modo, receita_id):
+                recarregar_catalogo()
+                return redirect(url_for("admin_index"))
+            erro = "Erro ao salvar receita."
+    receita["keywords_str"] = ", ".join(receita["keywords"])
+    return render_template("admin_form.html", receita=receita, erro=erro)
+
+
+@app.route("/admin/deletar/<int:receita_id>", methods=["POST"])
+def admin_deletar(receita_id):
+    if not admin_logado():
+        return redirect(url_for("admin_login"))
+    deletar_receita(receita_id)
+    recarregar_catalogo()
+    return redirect(url_for("admin_index"))
 
 
 if __name__ == "__main__":

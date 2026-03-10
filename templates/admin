@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Receitas</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #ddd; min-height: 100vh; }
+  header {
+    background: #16213e; padding: 16px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 2px solid #e2b96f;
+  }
+  header h1 { color: #e2b96f; font-size: 1.3rem; }
+  .links a {
+    color: #aaa; text-decoration: none; margin-left: 16px; font-size: 0.9rem;
+  }
+  .links a:hover { color: #e2b96f; }
+  main { padding: 32px; max-width: 1000px; margin: 0 auto; }
+  .topo { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .topo h2 { font-size: 1.2rem; color: #fff; }
+  .btn-novo {
+    background: #e2b96f; color: #1a1a2e; padding: 10px 20px;
+    border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 0.9rem;
+  }
+  .btn-novo:hover { background: #f0cc88; }
+  table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 12px; overflow: hidden; }
+  th { background: #0f3460; color: #e2b96f; padding: 14px 16px; text-align: left; font-size: 0.85rem; }
+  td { padding: 12px 16px; border-bottom: 1px solid #1e2d50; font-size: 0.9rem; }
+  tr:last-child td { border-bottom: none; }
+  .badge {
+    padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+  }
+  .badge.quente { background: #ff6b35; color: #fff; }
+  .badge.frio   { background: #4ecdc4; color: #1a1a2e; }
+  .badge.basico { background: #95a5a6; color: #1a1a2e; }
+  .acoes a, .acoes button {
+    padding: 6px 12px; border-radius: 6px; font-size: 0.8rem;
+    cursor: pointer; text-decoration: none; border: none; margin-right: 6px;
+  }
+  .acoes a { background: #0f3460; color: #e2b96f; }
+  .acoes a:hover { background: #1a4a8a; }
+  .acoes button { background: #c0392b; color: #fff; }
+  .acoes button:hover { background: #e74c3c; }
+  .vazio { text-align: center; padding: 40px; color: #666; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍞 Padaria Admin</h1>
+  <div class="links">
+    <a href="/">← Ver Bot</a>
+    <a href="/admin/logout">Sair</a>
+  </div>
+</header>
+<main>
+  <div class="topo">
+    <h2>Receitas cadastradas ({{ receitas|length }})</h2>
+    <a href="/admin/nova" class="btn-novo">+ Nova Receita</a>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Keywords</th>
+        <th>Categoria</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in receitas %}
+      <tr>
+        <td>{{ r.nome }}</td>
+        <td>{{ r.keywords | join(", ") }}</td>
+        <td><span class="badge {{ r.categoria }}">{{ r.categoria }}</span></td>
+        <td class="acoes">
+          <a href="/admin/editar/{{ r.id }}">Editar</a>
+          <form method="POST" action="/admin/deletar/{{ r.id }}" style="display:inline"
+                onsubmit="return confirm('Deletar {{ r.nome }}?')">
+            <button type="submit">Deletar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="vazio">Nenhuma receita cadastrada ainda.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

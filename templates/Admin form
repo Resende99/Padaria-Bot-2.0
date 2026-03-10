@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — {{ 'Editar' if receita else 'Nova' }} Receita</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #ddd; min-height: 100vh; }
+  header {
+    background: #16213e; padding: 16px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 2px solid #e2b96f;
+  }
+  header h1 { color: #e2b96f; font-size: 1.3rem; }
+  header a { color: #aaa; text-decoration: none; font-size: 0.9rem; }
+  header a:hover { color: #e2b96f; }
+  main { padding: 32px; max-width: 700px; margin: 0 auto; }
+  h2 { font-size: 1.2rem; color: #fff; margin-bottom: 24px; }
+  .campo { margin-bottom: 20px; }
+  label { display: block; color: #aaa; font-size: 0.85rem; margin-bottom: 6px; }
+  input[type=text], select, textarea {
+    width: 100%; padding: 12px 14px;
+    background: #16213e; border: 1px solid #2a4a7f;
+    border-radius: 8px; color: #fff; font-size: 0.95rem; outline: none;
+    font-family: inherit;
+  }
+  input[type=text]:focus, select:focus, textarea:focus { border-color: #e2b96f; }
+  textarea { resize: vertical; min-height: 120px; }
+  select option { background: #16213e; }
+  .hint { color: #666; font-size: 0.78rem; margin-top: 4px; }
+  .acoes { display: flex; gap: 12px; margin-top: 28px; }
+  .btn-salvar {
+    background: #e2b96f; color: #1a1a2e; padding: 12px 28px;
+    border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+  .btn-salvar:hover { background: #f0cc88; }
+  .btn-cancelar {
+    background: #2a4a7f; color: #ddd; padding: 12px 20px;
+    border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    text-decoration: none; display: flex; align-items: center;
+  }
+  .btn-cancelar:hover { background: #3a5a9f; }
+  .erro { color: #ff6b6b; background: rgba(255,107,107,0.1); border-radius: 8px; padding: 12px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🍞 Padaria Admin</h1>
+  <a href="/admin">← Voltar</a>
+</header>
+<main>
+  <h2>{{ 'Editar Receita' if receita else 'Nova Receita' }}</h2>
+  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+  <form method="POST">
+    <div class="campo">
+      <label>Nome da Receita</label>
+      <input type="text" name="nome" value="{{ receita.nome if receita else '' }}" placeholder="Ex: Pão de Mel" required>
+    </div>
+    <div class="campo">
+      <label>Keywords</label>
+      <input type="text" name="keywords" value="{{ receita.keywords_str if receita else '' }}" placeholder="Ex: pao de mel, mel" required>
+      <div class="hint">Separe por vírgula. O bot usa essas palavras para identificar a receita.</div>
+    </div>
+    <div class="campo">
+      <label>Categoria</label>
+      <select name="categoria" required>
+        <option value="">Selecione...</option>
+        <option value="quente" {{ 'selected' if receita and receita.categoria == 'quente' }}>Quente (dias quentes)</option>
+        <option value="frio"   {{ 'selected' if receita and receita.categoria == 'frio'   }}>Frio (dias frios)</option>
+        <option value="basico" {{ 'selected' if receita and receita.categoria == 'basico' }}>Básico</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label>Ingredientes</label>
+      <textarea name="ingredientes" placeholder="500g de farinha de trigo&#10;2 ovos&#10;200ml de leite" required>{{ receita.ingredientes if receita else '' }}</textarea>
+    </div>
+    <div class="campo">
+      <label>Modo de Preparo</label>
+      <textarea name="modo" placeholder="1. Pré-aqueça o forno a 180°C&#10;2. Misture os ingredientes..." required>{{ receita.modo if receita else '' }}</textarea>
+    </div>
+    <div class="acoes">
+      <button type="submit" class="btn-salvar">Salvar</button>
+      <a href="/admin" class="btn-cancelar">Cancelar</a>
+    </div>
+  </form>
+</main>
+</body>
+</html>

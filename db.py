@@ -1,6 +1,5 @@
 # db.py
 import os
-import json
 import logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -9,16 +8,14 @@ from sqlalchemy.pool import QueuePool
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-RECEITAS_DB  = "receitas.json"
 
-# ── Engine com pool e timeout ─────────────────────────
 try:
     engine = create_engine(
         DATABASE_URL,
         poolclass=QueuePool,
         pool_size=5,
         pool_timeout=5,
-        pool_pre_ping=True,  # testa conexão antes de usar
+        pool_pre_ping=True,
         connect_args={"connect_timeout": 5},
     )
     Session = sessionmaker(bind=engine)
@@ -30,18 +27,38 @@ except Exception as e:
 
 
 # ══════════════════════════════════════════
-# FALLBACK — carrega do JSON local
+# CATÁLOGO
 # ══════════════════════════════════════════
-def _catalogo_do_json():
+def carregar_catalogo():
+    if not Session:
+        return {}, [], []
     try:
-        with open(RECEITAS_DB, "r", encoding="utf-8") as f:
-            db = json.load(f)
+        with Session() as s:
+            rows = s.execute(
+                text("SELECT id, nome, keywords, categoria, ingredientes, modo FROM receitas")
+            ).fetchall()
+
+        if not rows:
+            logger.warning("Nenhuma receita no banco.")
+            return {}, [], []
+
+        db = {}
+        for r in rows:
+            db[r[1]] = {
+                "id":          r[0],
+                "keywords":    r[2],
+                "categoria":   r[3],
+                "ingredientes": r[4],
+                "modo":        r[5],
+            }
+
         receitas_quentes = [k for k, v in db.items() if v["categoria"] == "quente"]
         receitas_frias   = [k for k, v in db.items() if v["categoria"] == "frio"]
-        logger.warning("Catálogo carregado do JSON local (fallback).")
+        logger.info(f"Catálogo carregado: {len(db)} receitas.")
         return db, receitas_quentes, receitas_frias
+
     except Exception as e:
-        logger.error(f"Erro ao carregar JSON de fallback: {e}")
+        logger.error(f"carregar_catalogo erro: {e}")
         return {}, [], []
 
 
@@ -133,31 +150,70 @@ def salvar_historico(session_id: str, mensagem: str, resposta: str):
 
 
 # ══════════════════════════════════════════
-# CATÁLOGO DE RECEITAS
+# ADMIN — CRUD RECEITAS
 # ══════════════════════════════════════════
-def carregar_catalogo():
+def listar_receitas():
     if not Session:
-        return _catalogo_do_json()
+        return []
     try:
         with Session() as s:
             rows = s.execute(
-                text("SELECT chave, keywords, categoria, nome_pdf FROM receitas")
+                text("SELECT id, nome, keywords, categoria FROM receitas ORDER BY nome")
             ).fetchall()
-
-        if not rows:
-            raise RuntimeError("Nenhuma receita no banco.")
-
-        db = {r[0]: {
-            "keywords":  r[1],
-            "categoria": r[2],
-            "nome_pdf":  r[3],
-        } for r in rows}
-
-        receitas_quentes = [k for k, v in db.items() if v["categoria"] == "quente"]
-        receitas_frias   = [k for k, v in db.items() if v["categoria"] == "frio"]
-        logger.info(f"Catálogo carregado do banco: {len(db)} receitas.")
-        return db, receitas_quentes, receitas_frias
-
+            return [{"id": r[0], "nome": r[1], "keywords": r[2], "categoria": r[3]} for r in rows]
     except Exception as e:
-        logger.error(f"carregar_catalogo erro: {e} — usando fallback JSON.")
-        return _catalogo_do_json()
+        logger.error(f"listar_receitas erro: {e}")
+        return []
+
+
+def buscar_receita_por_id(receita_id: int):
+    if not Session:
+        return None
+    try:
+        with Session() as s:
+            row = s.execute(
+                text("SELECT id, nome, keywords, categoria, ingredientes, modo FROM receitas WHERE id = :id"),
+                {"id": receita_id}
+            ).fetchone()
+            if not row:
+                return None
+            return {"id": row[0], "nome": row[1], "keywords": row[2], "categoria": row[3], "ingredientes": row[4], "modo": row[5]}
+    except Exception as e:
+        logger.error(f"buscar_receita_por_id erro: {e}")
+        return None
+
+
+def salvar_receita(nome, keywords, categoria, ingredientes, modo, receita_id=None):
+    if not Session:
+        return False
+    try:
+        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+        with Session() as s:
+            if receita_id:
+                s.execute(text("""
+                    UPDATE receitas SET nome=:nome, keywords=:kw, categoria=:cat,
+                    ingredientes=:ing, modo=:modo WHERE id=:id
+                """), {"nome": nome, "kw": kw_list, "cat": categoria, "ing": ingredientes, "modo": modo, "id": receita_id})
+            else:
+                s.execute(text("""
+                    INSERT INTO receitas (nome, keywords, categoria, ingredientes, modo)
+                    VALUES (:nome, :kw, :cat, :ing, :modo)
+                """), {"nome": nome, "kw": kw_list, "cat": categoria, "ing": ingredientes, "modo": modo})
+            s.commit()
+        return True
+    except Exception as e:
+        logger.error(f"salvar_receita erro: {e}")
+        return False
+
+
+def deletar_receita(receita_id: int):
+    if not Session:
+        return False
+    try:
+        with Session() as s:
+            s.execute(text("DELETE FROM receitas WHERE id = :id"), {"id": receita_id})
+            s.commit()
+        return True
+    except Exception as e:
+        logger.error(f"deletar_receita erro: {e}")
+        return False
