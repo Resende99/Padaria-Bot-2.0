@@ -1,118 +1,143 @@
-Aqui está uma versão **Padaria-Bot 2.0** baseada no seu texto antigo, mas atualizada com as melhorias do novo projeto (banco de dados, cache, admin, Groq, etc.), mantendo o estilo **simples e direto**.
+Padaria-Bot 2.0
 
----
+Padaria-Bot 2.0 é um chatbot voltado para padarias e confeitarias, desenvolvido em Python com Flask no backend e HTML/CSS/JavaScript no frontend. O sistema utiliza um banco de dados PostgreSQL e integração com IA para responder perguntas sobre receitas, fermentação e panificação.
 
-# Padaria-Bot 2.0
+Este projeto é uma evolução da primeira versão do Padaria-Bot, que foi desenvolvida inicialmente como um projeto acadêmico. A versão 2.0 reorganiza a arquitetura do sistema e adiciona novas funcionalidades, como cache de respostas, painel administrativo e um banco de receitas estruturado.
 
-Padaria-Bot 2.0 é um chatbot desenvolvido para auxiliar atividades de padarias e confeitarias. Ele responde perguntas sobre receitas, fermentação e panificação utilizando um banco de receitas e inteligência artificial como apoio.
+Demo do projeto:
+https://padaria-bot-2-0.onrender.com
 
-O sistema busca primeiro respostas em sua base de dados e utiliza IA apenas quando necessário para complementar informações.
+Arquitetura do Projeto
 
-Demo online:
-[https://padaria-bot-2-0.onrender.com](https://padaria-bot-2-0.onrender.com)
+O sistema é dividido em três partes principais:
 
----
+Chat com IA
 
-# O que o projeto faz
+Banco de dados de receitas
 
-• Recebe perguntas do usuário através de um chat no navegador.
-• Consulta primeiro o banco de receitas armazenado no sistema.
-• Utiliza IA quando precisa complementar ou melhorar uma resposta.
-• Sugere receitas de acordo com o clima (dias quentes ou frios).
-• Calcula automaticamente a quantidade de fermento com base na temperatura e na farinha.
-• Mantém as respostas sempre relacionadas a panificação e confeitaria.
+Painel administrativo
 
----
+Chat com IA
 
-# Como funciona
+O chatbot segue um fluxo de decisão em etapas para responder às mensagens do usuário:
 
-## Front-end
+Cálculo de fermento
+Verifica se a pergunta é sobre fermentação e calcula automaticamente a quantidade ideal de fermento com base no peso da farinha e na temperatura ambiente.
 
-• Interface simples onde o usuário envia perguntas.
-• Envia mensagens para o servidor Flask.
-• Recebe respostas em JSON e exibe no chat.
+Sugestão de receitas por clima
+Caso o usuário peça sugestões para dias quentes ou frios, o sistema seleciona uma receita da categoria adequada.
 
-Tecnologias utilizadas:
+Filtro de tema
+O chatbot aceita apenas perguntas relacionadas a panificação e confeitaria.
+
+Consulta à última receita visualizada
+Caso o usuário peça ingredientes ou modo de preparo sem mencionar o nome da receita, o sistema utiliza a última receita visualizada na sessão.
+
+Consulta ao cache
+Antes de utilizar IA, o sistema verifica se aquela pergunta já foi respondida anteriormente.
+
+Busca no banco de receitas
+A mensagem do usuário é comparada com as palavras-chave das receitas armazenadas.
+
+Busca na web
+Caso a informação não esteja no banco de receitas, o sistema utiliza o modelo compound-beta da Groq, que possui acesso à internet.
+
+Fallback com IA
+Se nenhuma etapa anterior resolver, o sistema utiliza o modelo LLaMA 3 com histórico recente da conversa.
+
+Banco de Dados
+
+O projeto utiliza PostgreSQL com SQLAlchemy para gerenciar os dados.
+
+O banco possui quatro tabelas principais:
+
+Tabela	Função
+receitas	Armazena todas as receitas completas
+cache	Guarda respostas frequentes
+ultima_receita	Registra a última receita vista por cada usuário
+historico	Armazena o histórico de conversas
+
+A conexão com o banco utiliza pool de conexões reutilizáveis, evitando abrir e fechar conexões a cada requisição e melhorando a performance da aplicação.
+
+O banco atualmente possui 92 receitas cadastradas.
+
+Painel Administrativo
+
+O sistema possui um painel administrativo acessível em:
+
+/admin
+
+O painel permite:
+
+Criar novas receitas
+
+Editar receitas existentes
+
+Excluir receitas
+
+O acesso é protegido por senha e permite gerenciar o conteúdo do chatbot sem necessidade de alterar o código.
+
+Sempre que uma receita é alterada, o catálogo em memória é atualizado automaticamente sem necessidade de reiniciar o servidor.
+
+Frontend
+
+O frontend foi desenvolvido utilizando HTML, CSS e JavaScript.
+
+A interface possui:
+
+área de chat com mensagens dinâmicas
+
+indicador de digitação
+
+animações suaves
+
+sidebar com ações rápidas
+
+A identidade visual utiliza tons de marrom, creme e dourado inspirados em padarias artesanais.
+
+Em dispositivos móveis, a interface se adapta automaticamente e o chat ocupa toda a tela.
+
+Tecnologias Utilizadas
+
+Backend
+Python
+Flask
+
+Banco de Dados
+PostgreSQL
+SQLAlchemy
+
+IA
+Groq API
+LLaMA 3
+compound-beta
+
+Frontend
 HTML
 CSS
 JavaScript
 
----
+Deploy
+Render
+Gunicorn
 
-## Back-end (Flask)
+Deploy
 
-O servidor é responsável por:
+O projeto está hospedado no Render com deploy automático a partir do GitHub.
 
-• Receber as perguntas do usuário.
-• Consultar o banco de dados de receitas.
-• Verificar o cache de perguntas já respondidas.
-• Executar cálculos de fermentação.
-• Enviar contexto para a IA quando necessário.
-• Retornar a resposta final para o front-end.
+O processo funciona da seguinte forma:
 
----
+Código enviado ao GitHub
 
-## Banco de dados
+Render detecta o push
 
-O sistema utiliza **PostgreSQL** para armazenar:
+A aplicação é buildada automaticamente
 
-• Receitas de panificação e confeitaria.
-• Respostas em cache para perguntas frequentes.
+O Flask roda utilizando Gunicorn
 
-O banco contém **92 receitas cadastradas** que podem ser consultadas diretamente pelo chatbot.
+Variáveis sensíveis como chave da API, senha do banco e senha do admin são armazenadas no ambiente do Render e não ficam expostas no código.
 
----
-
-## Integração com IA
-
-A IA é utilizada apenas como complemento.
-
-Fluxo de uso da IA:
-
-1. O sistema tenta responder com o banco de receitas.
-2. Caso não encontre informação suficiente, consulta a IA.
-3. A IA recebe o contexto e gera uma resposta focada em panificação.
-
-Tecnologia utilizada:
-
-Groq API
-Modelo LLaMA 3
-
----
-
-# Principais recursos
-
-• Chat funcional no navegador.
-• Banco de receitas com dezenas de receitas cadastradas.
-• Cálculo automático de fermentação.
-• Sugestão de receitas com base no clima.
-• Cache inteligente de respostas.
-• Painel administrativo para gerenciar receitas.
-• Busca web quando necessário.
-
----
-
-# Painel administrativo
-
-O sistema possui um painel protegido por senha para gerenciamento das receitas.
-
-Através do painel é possível:
-
-• Criar novas receitas
-• Editar receitas existentes
-• Excluir receitas
-
-Acesso:
-
-```
-/admin
-```
-
----
-
-# Estrutura do projeto
-
-```
+Estrutura do Projeto
 Padaria-Bot/
 │
 ├── chat_padeiro.py
@@ -133,35 +158,11 @@ Padaria-Bot/
 │
 ├── requirements.txt
 └── Procfile
-```
+Objetivo do Projeto
 
----
+Criar um assistente digital simples e funcional para padarias, centralizando informações sobre receitas, fermentação e técnicas de panificação em um único sistema acessível via chat.
 
-# Deploy
-
-O projeto está hospedado online utilizando **Render**.
-
-Fluxo de deploy:
-
-• Código enviado para o GitHub
-• Repositório conectado ao Render
-• Build automático da aplicação
-• Flask executado como aplicação web
-
-Isso permite que o chatbot fique disponível online sem necessidade de rodar localmente.
-
----
-
-# Objetivo do projeto
-
-Criar um assistente simples, direto e funcional para padarias e confeitarias, centralizando informações de receitas, fermentação e técnicas de panificação, permitindo respostas rápidas através de chat.
-
----
-
-# Autor
+Autor
 
 Samuel Andrade Resende
 Estudante de Sistemas de Informação
-
----
-
