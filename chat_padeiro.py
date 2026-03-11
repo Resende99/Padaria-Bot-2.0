@@ -1,18 +1,17 @@
 # chat_padeiro.py
 import os, re, random, unicodedata, logging
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session
 
 from services.ia_services import gerar_resposta, buscar_e_responder_web
 from db import (
     cache_get, cache_set,
     carregar_catalogo,
     salvar_ultima_receita, buscar_ultima_receita,
-    salvar_historico,
-    listar_receitas, buscar_receita_por_id,
-    salvar_receita, deletar_receita,
+    salvar_historico, buscar_receita_completa,
+    listar_receitas, obter_receita,
+    criar_receita, atualizar_receita, deletar_receita,
 )
 
-# ── Logging ───────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -21,18 +20,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "padaria123")
-
-
-# ══════════════════════════════════════════
-# CATÁLOGO
-# ══════════════════════════════════════════
-DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
-
-
-def recarregar_catalogo():
-    global DB, RECEITAS_QUENTES, RECEITAS_FRIAS
-    DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
+ADMIN_SENHA = os.getenv("ADMIN_SENHA", "padaria123")
 
 
 # ══════════════════════════════════════════
@@ -42,12 +30,15 @@ def norm(s):
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii").lower()
 
 
-def buscar_chave_catalogo(mensagem):
-    m = norm(mensagem)
-    for chave, info in DB.items():
-        if any(norm(kw) in m for kw in info["keywords"]):
-            return chave
-    return None
+# ══════════════════════════════════════════
+# CATÁLOGO
+# ══════════════════════════════════════════
+DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
+
+def recarregar_catalogo():
+    global DB, RECEITAS_QUENTES, RECEITAS_FRIAS, PALAVRAS_PANIFICACAO
+    DB, RECEITAS_QUENTES, RECEITAS_FRIAS = carregar_catalogo()
+    PALAVRAS_PANIFICACAO = _palavras_panificacao()
 
 
 # ══════════════════════════════════════════
@@ -112,7 +103,7 @@ def escalar_ingredientes(texto, fator):
 
 
 # ══════════════════════════════════════════
-# SORTEIA RECEITA DA CATEGORIA
+# SORTEIA RECEITA
 # ══════════════════════════════════════════
 def sortear_receita(cat):
     lista    = RECEITAS_QUENTES if cat == "quentes" else RECEITAS_FRIAS
@@ -128,7 +119,7 @@ def sortear_receita(cat):
 
 
 # ══════════════════════════════════════════
-# ROTAS — CHAT
+# ROTAS PRINCIPAIS
 # ══════════════════════════════════════════
 @app.route("/")
 def index():
@@ -139,6 +130,86 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+# ══════════════════════════════════════════
+# ROTAS ADMIN
+# ══════════════════════════════════════════
+@app.route("/admin")
+def admin():
+    if not session.get("admin_logado"):
+        return render_template("admin_login.html")
+    return render_template("admin.html", receitas=listar_receitas())
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "GET":
+        return render_template("admin_login.html")
+    senha = request.form.get("senha", "")
+    if senha == ADMIN_SENHA:
+        session["admin_logado"] = True
+        return render_template("admin.html", receitas=listar_receitas())
+    return render_template("admin_login.html", erro="Senha incorreta.")
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_logado", None)
+    return render_template("admin_login.html")
+
+@app.route("/admin/nova", methods=["GET", "POST"])
+def admin_nova():
+    if not session.get("admin_logado"):
+        return render_template("admin_login.html")
+    erro = None
+    if request.method == "POST":
+        keywords = [k.strip() for k in request.form.get("keywords", "").split(",") if k.strip()]
+        ok = criar_receita(
+            request.form.get("nome"),
+            keywords,
+            request.form.get("categoria"),
+            request.form.get("ingredientes"),
+            request.form.get("modo"),
+        )
+        recarregar_catalogo()
+        if ok:
+            return render_template("admin.html", receitas=listar_receitas(), msg="Receita criada!")
+        erro = "Erro ao criar receita."
+    return render_template("admin_form.html", receita=None, acao="Nova Receita", erro=erro)
+
+@app.route("/admin/editar/<int:rid>", methods=["GET", "POST"])
+def admin_editar(rid):
+    if not session.get("admin_logado"):
+        return render_template("admin_login.html")
+    erro = None
+    if request.method == "POST":
+        keywords = [k.strip() for k in request.form.get("keywords", "").split(",") if k.strip()]
+        ok = atualizar_receita(
+            rid,
+            request.form.get("nome"),
+            keywords,
+            request.form.get("categoria"),
+            request.form.get("ingredientes"),
+            request.form.get("modo"),
+        )
+        recarregar_catalogo()
+        if ok:
+            return render_template("admin.html", receitas=listar_receitas(), msg="Receita atualizada!")
+        erro = "Erro ao atualizar receita."
+    receita = obter_receita(rid)
+    if receita:
+        receita["keywords"] = ", ".join(receita["keywords"])
+    return render_template("admin_form.html", receita=receita, acao="Editar Receita", erro=erro)
+
+@app.route("/admin/deletar/<int:rid>", methods=["POST"])
+def admin_deletar(rid):
+    if not session.get("admin_logado"):
+        return render_template("admin_login.html")
+    deletar_receita(rid)
+    recarregar_catalogo()
+    return render_template("admin.html", receitas=listar_receitas(), msg="Receita deletada!")
+
+
+# ══════════════════════════════════════════
+# CHAT
+# ══════════════════════════════════════════
 @app.route("/api/v1/chat", methods=["POST"])
 def api_chat():
     dados    = request.get_json() or {}
@@ -183,20 +254,9 @@ def api_chat():
 
     # ── 2. DIAS QUENTES / FRIOS / MAIS ───────────────────────────────────────
     escolhida = None
-
-    PADROES_QUENTE = [
-        r"dias?.quentes?", r"dia de calor", r"calor", r"faz calor",
-        r"dia quente", r"temperatura alta", r"verao",
-    ]
-    PADROES_FRIO = [
-        r"dias?.frios?", r"dia de frio", r"faz frio",
-        r"dia frio", r"temperatura baixa", r"inverno", r"gelado",
-        r"tempo frio", r"dia gelado",
-    ]
-    PADROES_MAIS = [
-        r"\b(mais|outra|proxima|outro|proximo|diferente)\b",
-        r"me da (mais|outra)", r"quero (mais|outra)",
-    ]
+    PADROES_QUENTE = [r"dias?.quentes?", r"dia de calor", r"calor", r"faz calor", r"dia quente", r"temperatura alta", r"verao"]
+    PADROES_FRIO   = [r"dias?.frios?", r"dia de frio", r"faz frio", r"dia frio", r"temperatura baixa", r"inverno", r"gelado", r"tempo frio", r"dia gelado"]
+    PADROES_MAIS   = [r"\b(mais|outra|proxima|outro|proximo|diferente)\b", r"me da (mais|outra)", r"quero (mais|outra)"]
 
     if any(re.search(p, msg_norm) for p in PADROES_QUENTE):
         escolhida = sortear_receita("quentes")
@@ -239,24 +299,23 @@ def api_chat():
         return jsonify({"resposta": cached}), 200
 
     # ── 6. BUSCA NO BANCO ─────────────────────────────────────────────────────
-    chave = buscar_chave_catalogo(mensagem)
-    if chave and chave in DB:
-        info = DB[chave]
-        ing  = info.get("ingredientes", "")
-        modo = info.get("modo", "")
-        nome = chave
+    receita = buscar_receita_completa(mensagem, DB)
+    if receita:
+        ing  = receita.get("ingredientes", "")
+        modo = receita.get("modo", "")
+        nome = receita.get("nome", "Receita")
 
-        salvar_ultima_receita(session_id, nome, ing, modo)
+        salvar_ultima_receita(session_id, receita["id"])
 
         if kg and ing:
-            ing  = escalar_ingredientes(ing, kg)
+            ing = escalar_ingredientes(ing, kg)
 
         resp = f"Receita: {nome}\n\nIngredientes:\n{ing}\n\nModo de preparo:\n{modo}"
         cache_set(chave_cache, resp)
         salvar_historico(session_id, mensagem, resp)
         return jsonify({"resposta": resp}), 200
 
-    # ── 7. BUSCA WEB (Groq compound-beta) ─────────────────────────────────────
+    # ── 7. BUSCA WEB ──────────────────────────────────────────────────────────
     try:
         resp_web = buscar_e_responder_web(mensagem)
         if resp_web:
@@ -272,94 +331,6 @@ def api_chat():
     cache_set(chave_cache, resp)
     salvar_historico(session_id, mensagem, resp)
     return jsonify({"resposta": resp}), 200
-
-
-# ══════════════════════════════════════════
-# ROTAS — ADMIN
-# ══════════════════════════════════════════
-def admin_logado():
-    return session.get("admin_logado") is True
-
-
-@app.route("/admin/login", methods=["GET", "POST"])
-def admin_login():
-    erro = None
-    if request.method == "POST":
-        senha = request.form.get("senha", "")
-        if senha == ADMIN_PASSWORD:
-            session["admin_logado"] = True
-            return redirect(url_for("admin_index"))
-        erro = "Senha incorreta."
-    return render_template("admin_login.html", erro=erro)
-
-
-@app.route("/admin/logout")
-def admin_logout():
-    session.pop("admin_logado", None)
-    return redirect(url_for("admin_login"))
-
-
-@app.route("/admin")
-def admin_index():
-    if not admin_logado():
-        return redirect(url_for("admin_login"))
-    receitas = listar_receitas()
-    return render_template("admin.html", receitas=receitas)
-
-
-@app.route("/admin/nova", methods=["GET", "POST"])
-def admin_nova():
-    if not admin_logado():
-        return redirect(url_for("admin_login"))
-    erro = None
-    if request.method == "POST":
-        nome        = request.form.get("nome", "").strip()
-        keywords    = request.form.get("keywords", "").strip()
-        categoria   = request.form.get("categoria", "").strip()
-        ingredientes = request.form.get("ingredientes", "").strip()
-        modo        = request.form.get("modo", "").strip()
-        if not all([nome, keywords, categoria, ingredientes, modo]):
-            erro = "Preencha todos os campos."
-        else:
-            if salvar_receita(nome, keywords, categoria, ingredientes, modo):
-                recarregar_catalogo()
-                return redirect(url_for("admin_index"))
-            erro = "Erro ao salvar receita."
-    return render_template("admin_form.html", receita=None, erro=erro)
-
-
-@app.route("/admin/editar/<int:receita_id>", methods=["GET", "POST"])
-def admin_editar(receita_id):
-    if not admin_logado():
-        return redirect(url_for("admin_login"))
-    receita = buscar_receita_por_id(receita_id)
-    if not receita:
-        return redirect(url_for("admin_index"))
-    erro = None
-    if request.method == "POST":
-        nome         = request.form.get("nome", "").strip()
-        keywords     = request.form.get("keywords", "").strip()
-        categoria    = request.form.get("categoria", "").strip()
-        ingredientes = request.form.get("ingredientes", "").strip()
-        modo         = request.form.get("modo", "").strip()
-        if not all([nome, keywords, categoria, ingredientes, modo]):
-            erro = "Preencha todos os campos."
-        else:
-            if salvar_receita(nome, keywords, categoria, ingredientes, modo, receita_id):
-                recarregar_catalogo()
-                return redirect(url_for("admin_index"))
-            erro = "Erro ao salvar receita."
-    receita["keywords_str"] = ", ".join(receita["keywords"])
-    return render_template("admin_form.html", receita=receita, erro=erro)
-
-
-@app.route("/admin/deletar/<int:receita_id>", methods=["POST"])
-def admin_deletar(receita_id):
-    if not admin_logado():
-        return redirect(url_for("admin_login"))
-    deletar_receita(receita_id)
-    recarregar_catalogo()
-    return redirect(url_for("admin_index"))
 
 
 if __name__ == "__main__":
