@@ -45,7 +45,7 @@
   <h1>🍞 Padaria Admin</h1>
   <p>Área restrita — insira a senha para continuar</p>
   {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
-  <form method="POST">
+  <form method="POST" action="/admin/login">
     <label>Senha</label>
     <input type="password" name="senha" placeholder="••••••••" autofocus>
     <button type="submit">Entrar</button>
